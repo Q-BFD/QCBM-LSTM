@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# =============================
+# Configuration Variables
+# =============================
+STACK_NAME="qcbm-dev-stack"
+KEY_NAME="qcbm-dev-key"  # AWS EC2 Key Pair name
+SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"  # Path to your SSH public key file
+INSTANCE_TYPE="t3.medium"
+VOLUME_SIZE="50"
+
+# =============================
+# Validation
+# =============================
+# Expand tilde in path
+SSH_PUBLIC_KEY_FILE_EXPANDED="${SSH_PUBLIC_KEY_FILE/#\~/$HOME}"
+
+if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
+    echo "Error: SSH public key file not found at: $SSH_PUBLIC_KEY_FILE_EXPANDED"
+    echo "Please check the SSH_PUBLIC_KEY_FILE variable or generate SSH key with:"
+    echo "  ssh-keygen -t rsa -b 4096 -C 'your_email@example.com'"
+    exit 1
+fi
+
+if [ "$KEY_NAME" = "YOUR_KEY_NAME" ]; then
+    echo "Error: Please set your actual AWS EC2 Key Pair name in KEY_NAME variable"
+    exit 1
+fi
+
+# =============================
+# AWS EC2 Key Pair Management
+# =============================
+echo "🔍 Checking AWS EC2 Key Pair: $KEY_NAME"
+
+# Check if Key Pair exists
+if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
+    echo "✅ Key Pair '$KEY_NAME' already exists"
+else
+    echo "⚠️  Key Pair '$KEY_NAME' not found. Creating new one..."
+    
+    # Create new Key Pair and save to local file
+    KEY_FILE="$HOME/.ssh/${KEY_NAME}.pem"
+    
+    if aws ec2 create-key-pair --key-name "$KEY_NAME" --query 'KeyMaterial' --output text > "$KEY_FILE"; then
+        chmod 600 "$KEY_FILE"
+        echo "✅ Key Pair created successfully: $KEY_FILE"
+        echo "   (This file is needed for direct EC2 access)"
+    else
+        echo "❌ Failed to create Key Pair"
+        exit 1
+    fi
+fi
+
+# =============================
+# Read SSH Public Key
+# =============================
+SSH_PUBLIC_KEY=$(cat "$SSH_PUBLIC_KEY_FILE_EXPANDED")
+
+if [ -z "$SSH_PUBLIC_KEY" ]; then
+    echo "Error: SSH public key file is empty"
+    exit 1
+fi
+
+echo "🔑 Using SSH public key from: $SSH_PUBLIC_KEY_FILE_EXPANDED"
+echo "🚀 Deploying CloudFormation stack: $STACK_NAME"
+
+# =============================
+# Deploy CloudFormation Stack
+# =============================
+aws cloudformation deploy \
+  --template-file cloudformation.yml \
+  --stack-name "$STACK_NAME" \
+  --parameter-overrides \
+    KeyName="$KEY_NAME" \
+    SSHPublicKey="$SSH_PUBLIC_KEY" \
+    InstanceType="$INSTANCE_TYPE" \
+    VolumeSize="$VOLUME_SIZE" \
+  --capabilities CAPABILITY_NAMED_IAM
+
+# =============================
+# Get Outputs
+# =============================
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "🎉 Deployment completed successfully!"
+    echo ""
+    echo "📋 Stack Outputs:"
+    aws cloudformation describe-stacks \
+      --stack-name "$STACK_NAME" \
+      --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+      --output table
+    echo ""
+    echo "🔧 Next Steps:"
+    echo "   1. Run: ./setup_ssh_config.sh"
+    echo "   2. Connect: VSCode Remote-SSH → qcbm-container"
+    echo ""
+    echo "🔑 SSH Keys Info:"
+    echo "   📁 EC2 Key Pair: ~/.ssh/${KEY_NAME}.pem (for EC2 direct access)"
+    echo "   📁 Dev SSH Key: $SSH_PUBLIC_KEY_FILE_EXPANDED (for container access)"
+else
+    echo "❌ Deployment failed!"
+    exit 1
+fi
