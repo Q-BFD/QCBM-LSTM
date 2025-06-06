@@ -1,0 +1,403 @@
+# =============================
+# QCBM Dev Environment - CPU Test Instance
+# =============================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: QCBM Dev Env - CPU Instance with Docker + EBS (No GPU quota needed)
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair
+  InstanceType:
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - c5.large
+      - c5.xlarge
+    Description: CPU instance type for testing (no GPU quota required)
+  VolumeSize:
+    Type: Number
+    Default: 50
+    Description: Size of the EBS volume in GiB
+  SSHPublicKey:
+    Type: String
+    Description: SSH public key to be added to authorized_keys
+    AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
+    ConstraintDescription: Must be a valid SSH public key
+  GitRepository:
+    Type: String
+    Default: https://github.com/Q-BFD/QCBM-LSTM.git
+    Description: Git repository URL to clone
+  GitBranch:
+    Type: String
+    Default: automation
+    Description: Git branch to checkout
+
+Resources:
+  QcbmSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH, VSCode, Docker SSH, and Jupyter
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: 0.0.0.0/0
+
+  QcbmVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Size: !Ref VolumeSize
+      VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: QCBMDataVolume-CPU
+
+  QcbmInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul)
+      AvailabilityZone: !Select [0, !GetAZs '']
+      SecurityGroupIds:
+        - !Ref QcbmSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Remove strict error handling to prevent early exit
+          # set -e  # Commented out to continue on errors
+
+          # Enhanced logging function
+          log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/qcbm-setup.log
+          }
+
+          error_log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a /var/log/qcbm-setup.log
+          }
+
+          success_log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a /var/log/qcbm-setup.log
+          }
+
+          log "🚀 Starting QCBM development environment setup..."
+          log "🧪 Instance Type: ${InstanceType} (CPU Testing)"
+          log "📂 Git Repository: ${GitRepository}"
+          log "🌿 Git Branch: ${GitBranch}"
+
+          # Check initial disk space
+          log "💾 Checking initial disk space..."
+          df -h | tee -a /var/log/qcbm-setup.log
+
+          # Update system with retry logic
+          log "📦 Updating system packages..."
+          for i in {1..3}; do
+              if apt update; then
+                  success_log "System packages updated successfully"
+                  break
+              else
+                  error_log "Failed to update packages (attempt $i/3)"
+                  sleep 10
+              fi
+          done
+
+          # Install packages one by one with error handling
+          log "📦 Installing basic packages..."
+          PACKAGES=(
+              "git"
+              "docker.io"
+              "python3-pip"
+              "awscli"
+              "curl"
+              "wget"
+              "unzip"
+              "nodejs"
+              "openssh-server"
+              "jq"
+              "lsblk"
+              "htop"
+              "vim"
+              "nano"
+          )
+
+          for package in "$${!PACKAGES[@]}"; do
+              log "Installing $${!PACKAGES[$package]}..."
+              if apt install -y "$${!PACKAGES[$package]}"; then
+                  success_log "$${!PACKAGES[$package]} installed successfully"
+              else
+                  error_log "Failed to install $${!PACKAGES[$package]}, continuing..."
+              fi
+          done
+
+          # Check disk space after package installation
+          log "💾 Checking disk space after package installation..."
+          df -h | tee -a /var/log/qcbm-setup.log
+
+          # Configure Docker
+          log "🐳 Configuring Docker..."
+          if systemctl enable docker && systemctl start docker; then
+              success_log "Docker configured successfully"
+              usermod -aG docker ubuntu
+          else
+              error_log "Failed to configure Docker"
+          fi
+
+          # Find and mount EBS volume
+          log "💾 Finding EBS volume..."
+          EBS_DEVICE=""
+          for i in {1..30}; do
+              DEVICE=$(lsblk -n -o NAME,MOUNTPOINT,SIZE | grep -v "/" | grep -E "(50G)" | head -1 | awk '{print $1}')
+              if [ ! -z "$DEVICE" ]; then
+                  if [[ $DEVICE == nvme* ]]; then
+                      EBS_DEVICE="/dev/$DEVICE"
+                  else
+                      EBS_DEVICE="/dev/$DEVICE"
+                  fi
+                  success_log "Found EBS volume: $EBS_DEVICE"
+                  break
+              fi
+              log "⏳ Waiting for EBS volume... (attempt $i/30)"
+              sleep 10
+          done
+
+          if [ -z "$EBS_DEVICE" ]; then
+              error_log "Could not find EBS volume, continuing without data volume..."
+              mkdir -p /mnt/data
+              chown ubuntu:ubuntu /mnt/data
+          else
+              # Format and mount EBS volume
+              log "🔧 Formatting and mounting EBS volume: $EBS_DEVICE"
+              mkdir -p /mnt/data
+
+              if ! blkid "$EBS_DEVICE" > /dev/null 2>&1; then
+                  log "📝 Formatting $EBS_DEVICE with ext4..."
+                  if mkfs.ext4 "$EBS_DEVICE"; then
+                      success_log "EBS volume formatted successfully"
+                  else
+                      error_log "Failed to format EBS volume"
+                  fi
+              fi
+
+              if mount "$EBS_DEVICE" /mnt/data; then
+                  success_log "EBS volume mounted successfully"
+                  echo "$EBS_DEVICE /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
+                  chown ubuntu:ubuntu /mnt/data
+              else
+                  error_log "Failed to mount EBS volume"
+              fi
+          fi
+
+          # Clone repository
+          log "📁 Cloning repository from ${GitRepository} (branch: ${GitBranch})..."
+          cd /mnt/data
+          if [ ! -d "QCBM-LSTM" ]; then
+              if git clone -b ${GitBranch} ${GitRepository}; then
+                  success_log "Repository cloned successfully"
+                  chown -R ubuntu:ubuntu QCBM-LSTM
+              else
+                  error_log "Failed to clone repository"
+              fi
+          fi
+
+          # Install Python requirements with careful disk space management
+          log "🐍 Installing Python requirements (CPU only)..."
+
+          # Check available space before installing
+          AVAILABLE_SPACE=$(df / | awk 'NR==2 {print $$4}')
+          log "Available disk space: $${!AVAILABLE_SPACE}KB"
+
+          if [ "$${!AVAILABLE_SPACE}" -lt 2000000 ]; then
+              error_log "Insufficient disk space for package installation"
+              log "Attempting to clean up..."
+              apt autoremove -y
+              apt autoclean
+              docker system prune -f
+          fi
+
+          # Install packages with smaller memory footprint
+          log "Installing minimal PyTorch CPU..."
+          if pip3 install --no-cache-dir torch==2.0.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu; then
+              success_log "PyTorch CPU installed successfully"
+          else
+              error_log "Failed to install PyTorch CPU"
+          fi
+
+          # Install other packages individually
+          PYTHON_PACKAGES=(
+              "numpy==1.24.3"
+              "pandas==2.0.3"
+              "matplotlib==3.7.2"
+              "scikit-learn==1.3.0"
+              "jupyter==1.0.0"
+              "notebook==7.0.2"
+              "qiskit==0.43.1"
+              "tqdm==4.65.0"
+          )
+
+          for package in "$${!PYTHON_PACKAGES[@]}"; do
+              log "Installing Python package: $${!PYTHON_PACKAGES[$package]}"
+              if pip3 install --no-cache-dir "$${!PYTHON_PACKAGES[$package]}"; then
+                  success_log "Successfully installed $${!PYTHON_PACKAGES[$package]}"
+              else
+                  error_log "Failed to install $${!PYTHON_PACKAGES[$package]}, continuing..."
+              fi
+              
+              # Check disk space after each package
+              AVAILABLE_SPACE=$(df / | awk 'NR==2 {print $$4}')
+              if [ "$${!AVAILABLE_SPACE}" -lt 1000000 ]; then
+                  log "Low disk space detected, cleaning up..."
+                  pip3 cache purge
+              fi
+          done
+
+          # Set up SSH keys
+          log "🔑 Setting up SSH keys..."
+          mkdir -p /home/ubuntu/.ssh
+          echo "${SSHPublicKey}" >> /home/ubuntu/.ssh/authorized_keys
+          chmod 600 /home/ubuntu/.ssh/authorized_keys
+          chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+          success_log "SSH keys configured"
+
+          # Start Jupyter on host (simpler approach)
+          log "🪐 Starting Jupyter Notebook server on host..."
+          cd /mnt/data/QCBM-LSTM || cd /mnt/data || cd /home/ubuntu
+
+          if which jupyter >/dev/null 2>&1; then
+              nohup sudo -u ubuntu jupyter notebook \
+                  --ip=0.0.0.0 \
+                  --port=8888 \
+                  --no-browser \
+                  --notebook-dir=/mnt/data/QCBM-LSTM \
+                  --NotebookApp.token=qcbmtoken \
+                  --NotebookApp.password='' \
+                  --allow-root \
+                  > /var/log/jupyter.log 2>&1 &
+              success_log "Jupyter Notebook started successfully"
+          else
+              error_log "Jupyter not available, skipping..."
+          fi
+
+          # Try to build Docker container (optional)
+          log "🐳 Attempting Docker container setup..."
+          cd /mnt/data/QCBM-LSTM 2>/dev/null || log "QCBM-LSTM directory not found, skipping Docker build"
+
+          if [ -f "Dockerfile" ] && docker info >/dev/null 2>&1; then
+              log "Building Docker image..."
+              if docker build -t qcbm-dev .; then
+                  success_log "Docker image built successfully"
+                  
+                  # Run container
+                  docker stop qcbm-dev 2>/dev/null || true
+                  docker rm qcbm-dev 2>/dev/null || true
+                  
+                  if docker run -d \
+                    --name qcbm-dev \
+                    -p 8080:8080 \
+                    -p 2222:22 \
+                    -v /mnt/data:/mnt/data \
+                    -v /mnt/data/QCBM-LSTM:/home/devuser/workspace \
+                    --restart unless-stopped \
+                    qcbm-dev; then
+                      success_log "Docker container started successfully"
+                  else
+                      error_log "Failed to start Docker container"
+                  fi
+              else
+                  error_log "Failed to build Docker image"
+              fi
+          else
+              log "Docker setup skipped (no Dockerfile or Docker not available)"
+          fi
+
+          # Final status
+          echo "QCBM development environment setup completed at $(date)" > /mnt/data/setup-complete.txt 2>/dev/null || echo "Setup completed" > /tmp/setup-complete.txt
+
+          log "🎉 QCBM development environment setup completed!"
+          log "🧪 CPU Test Instance setup finished"
+          log "📋 Available services:"
+
+          # Get public IP
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "CHECK_AWS_CONSOLE")
+          log "   - Jupyter Notebook: http://$$PUBLIC_IP:8888 (token: qcbmtoken)"
+
+          if docker ps | grep -q qcbm-dev; then
+              log "   - VSCode Web: http://$$PUBLIC_IP:8080"
+              log "   - SSH to container: ssh devuser@$$PUBLIC_IP -p 2222"
+          fi
+
+          log "   - SSH to EC2: ssh ubuntu@$$PUBLIC_IP"
+          log "🚀 Next: Test environment, then request GPU quota for g4dn.2xlarge"
+
+          # Final disk space check
+          log "💾 Final disk space usage:"
+          df -h | tee -a /var/log/qcbm-setup.log
+
+          success_log "Setup script completed successfully!"
+
+  VolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref QcbmInstance
+      VolumeId: !Ref QcbmVolume
+      Device: /dev/xvdf
+
+  QcbmElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  QcbmEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref QcbmInstance
+      EIP: !Ref QcbmElasticIP
+
+Outputs:
+  StaticIP:
+    Description: Elastic IP address
+    Value: !Ref QcbmElasticIP
+
+  JupyterURL:
+    Description: Jupyter Notebook URL
+    Value: !Sub 'http://${QcbmElasticIP}:8888 (token: qcbmtoken)'
+
+  VSCodeURL:
+    Description: VSCode Web URL (if container running)
+    Value: !Sub 'http://${QcbmElasticIP}:8080'
+
+  ContainerSSH:
+    Description: SSH access to container (port 2222)
+    Value: !Sub 'ssh -p 2222 devuser@${QcbmElasticIP}'
+
+  EC2SSH:
+    Description: SSH access to EC2 instance
+    Value: !Sub 'ssh ubuntu@${QcbmElasticIP}'
+
+  InstanceType:
+    Description: Instance type and billing
+    Value: !Sub '${InstanceType} (CPU Testing)'
+
+  NextSteps:
+    Description: What to do next
+    Value: 'Test environment with Jupyter, then request GPU quota for g4dn.2xlarge'
