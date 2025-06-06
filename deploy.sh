@@ -6,8 +6,8 @@
 STACK_NAME="qcbm-dev-stack"
 KEY_NAME="qcbm-dev-key"  # AWS EC2 Key Pair name
 SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"  # Path to your SSH public key file
-INSTANCE_TYPE="t3.medium"
-VOLUME_SIZE="50"
+INSTANCE_TYPE="g4dn.2xlarge"  # GPU instance for quantum ML workloads
+VOLUME_SIZE="100"  # Increased for GPU packages
 
 # =============================
 # Validation
