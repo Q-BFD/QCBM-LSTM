@@ -13,12 +13,13 @@ CONFIG_FILE="$HOME/.ssh/config"          # SSH 설정파일 경로
 EC2_KEY_NAME="qcbm-dev-key"              # EC2 Key Pair 이름
 EC2_KEY_FILE="$HOME/.ssh/${EC2_KEY_NAME}.pem"  # EC2 접속용 키
 
-# 개인 SSH 키 파일 자동 감지 (우선순위: ed25519 > rsa > ecdsa)
+# ⭐ 개인 SSH 키 파일 우선순위 (Container 접속용)
+# 첫 번째로 발견되는 키를 사용합니다
 PERSONAL_SSH_KEY_FILES=(
-    "$HOME/.ssh/id_ed25519"
-    "$HOME/.ssh/id_ed25519_github_qb_frontier"
-    "$HOME/.ssh/id_rsa"
-    "$HOME/.ssh/id_ecdsa"
+    "$HOME/.ssh/id_ed25519_github_qb_frontier"  # 🔑 주 개발 키 (최우선)
+    "$HOME/.ssh/id_ed25519"                      # 🔑 기본 ed25519 키
+    "$HOME/.ssh/id_rsa"                          # 🔑 RSA 키 (백업)
+    "$HOME/.ssh/id_ecdsa"                        # 🔑 ECDSA 키 (백업)
 )
 
 # =============================
