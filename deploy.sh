@@ -8,6 +8,8 @@ KEY_NAME="qcbm-dev-key"  # AWS EC2 Key Pair name
 SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"  # Path to your SSH public key file
 INSTANCE_TYPE="g4dn.2xlarge"  # GPU instance for quantum ML workloads
 VOLUME_SIZE="100"  # Increased for GPU packages
+USE_SPOT_INSTANCE="true"  # Use Spot Instance to save 60-90% on costs
+SPOT_MAX_PRICE="0.50"  # Maximum price per hour for Spot Instance
 
 # =============================
 # Validation
@@ -75,6 +77,8 @@ aws cloudformation deploy \
     SSHPublicKey="$SSH_PUBLIC_KEY" \
     InstanceType="$INSTANCE_TYPE" \
     VolumeSize="$VOLUME_SIZE" \
+    UseSpotInstance="$USE_SPOT_INSTANCE" \
+    SpotMaxPrice="$SPOT_MAX_PRICE" \
   --capabilities CAPABILITY_NAMED_IAM
 
 # =============================
