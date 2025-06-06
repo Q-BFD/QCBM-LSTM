@@ -1,8 +1,8 @@
 # =============================
-# 1. CloudFormation Template
+# QCBM Dev Environment - Spot Instance
 # =============================
 AWSTemplateFormatVersion: '2010-09-09'
-Description: QCBM Dev Env - EC2 with GPU Docker + EBS + Elastic IP + Inject SSH Key + Spot Instance Support
+Description: QCBM Dev Env - GPU Spot Instance with Docker + EBS + Elastic IP (60-90% cost savings)
 
 Parameters:
   KeyName:
@@ -20,13 +20,6 @@ Parameters:
       - g5.4xlarge
       - p3.2xlarge
     Description: GPU-enabled EC2 instance type for quantum ML workloads
-  UseSpotInstance:
-    Type: String
-    Default: 'true'
-    AllowedValues:
-      - 'true'
-      - 'false'
-    Description: Use Spot Instance to save 60-90% on costs (recommended for development)
   SpotMaxPrice:
     Type: String
     Default: '0.50'
@@ -34,15 +27,12 @@ Parameters:
   VolumeSize:
     Type: Number
     Default: 100
-    Description: Size of the EBS volume in GiB (increased for GPU packages)
+    Description: Size of the EBS volume in GiB
   SSHPublicKey:
     Type: String
-    Description: SSH public key to be added to authorized_keys (paste your ~/.ssh/id_rsa.pub content here)
+    Description: SSH public key to be added to authorized_keys
     AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
     ConstraintDescription: Must be a valid SSH public key
-
-Conditions:
-  UseSpot: !Equals [!Ref UseSpotInstance, 'true']
 
 Resources:
   QcbmSecurityGroup:
@@ -78,16 +68,14 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
-      ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul) - Updated 2025-05-16
+      ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul)
       SecurityGroupIds:
         - !Ref QcbmSecurityGroup
-      InstanceMarketOptions: !If
-        - UseSpot
-        - MarketType: spot
-          SpotOptions:
-            MaxPrice: !Ref SpotMaxPrice
-            SpotInstanceType: one-time
-        - !Ref AWS::NoValue
+      InstanceMarketOptions:
+        MarketType: spot
+        SpotOptions:
+          MaxPrice: !Ref SpotMaxPrice
+          SpotInstanceType: one-time
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -98,11 +86,11 @@ Resources:
               echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/qcbm-setup.log
           }
 
-          log "Starting QCBM development environment setup..."
-          log "💰 Instance Type: ${InstanceType} (Spot: ${UseSpotInstance})"
+          log "🚀 Starting QCBM development environment setup..."
+          log "💰 Instance Type: ${InstanceType} (Spot - 60-90% savings!)"
 
           # Update system and install packages
-          log "Updating system and installing packages..."
+          log "📦 Updating system and installing packages..."
           apt update && apt install -y \
               git \
               docker.io \
@@ -117,94 +105,81 @@ Resources:
               lsblk
 
           # Configure Docker
-          log "Configuring Docker..."
+          log "🐳 Configuring Docker..."
           systemctl enable docker
           systemctl start docker
           usermod -aG docker ubuntu
 
           # Find and mount EBS volume automatically
-          log "Finding EBS volume..."
-
-          # Wait for EBS volume to be attached
+          log "💾 Finding EBS volume..."
           for i in {1..30}; do
-              # Find unformatted volume (excluding root volume) - Updated size search
-              DEVICE=$(lsblk -n -o NAME,MOUNTPOINT,SIZE | grep -v "/" | grep -E "(50G|100G)" | head -1 | awk '{print $1}')
+              DEVICE=$(lsblk -n -o NAME,MOUNTPOINT,SIZE | grep -v "/" | grep -E "(100G)" | head -1 | awk '{print $1}')
               if [ ! -z "$DEVICE" ]; then
-                  # Convert to full device path
                   if [[ $DEVICE == nvme* ]]; then
                       EBS_DEVICE="/dev/$DEVICE"
                   else
                       EBS_DEVICE="/dev/$DEVICE"
                   fi
-                  log "Found EBS volume: $EBS_DEVICE"
+                  log "✅ Found EBS volume: $EBS_DEVICE"
                   break
               fi
-              log "Waiting for EBS volume... (attempt $i/30)"
+              log "⏳ Waiting for EBS volume... (attempt $i/30)"
               sleep 10
           done
 
           if [ -z "$EBS_DEVICE" ]; then
-              log "ERROR: Could not find EBS volume"
+              log "❌ ERROR: Could not find EBS volume"
               exit 1
           fi
 
           # Format and mount EBS volume
-          log "Formatting and mounting EBS volume: $EBS_DEVICE"
+          log "🔧 Formatting and mounting EBS volume: $EBS_DEVICE"
           mkdir -p /mnt/data
 
-          # Check if already formatted
           if ! blkid "$EBS_DEVICE" > /dev/null 2>&1; then
-              log "Formatting $EBS_DEVICE with ext4..."
+              log "📝 Formatting $EBS_DEVICE with ext4..."
               mkfs.ext4 "$EBS_DEVICE"
           fi
 
-          # Mount the volume
           mount "$EBS_DEVICE" /mnt/data
           echo "$EBS_DEVICE /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
-
-          # Set permissions
           chown ubuntu:ubuntu /mnt/data
 
           # Clone repository
-          log "Cloning QCBM-LSTM repository..."
+          log "📁 Cloning QCBM-LSTM repository..."
           cd /mnt/data
           if [ ! -d "QCBM-LSTM" ]; then
               git clone -b automation https://github.com/Q-BFD/QCBM-LSTM.git
               chown -R ubuntu:ubuntu QCBM-LSTM
           fi
 
-          # Install Python requirements (if requirements.txt exists)
+          # Install Python requirements
           if [ -f "/mnt/data/QCBM-LSTM/requirements.txt" ]; then
-              log "Installing Python requirements..."
+              log "🐍 Installing Python requirements..."
               pip3 install -r /mnt/data/QCBM-LSTM/requirements.txt
           fi
 
-          # Set up SSH keys for container
-          log "Setting up SSH keys..."
+          # Set up SSH keys
+          log "🔑 Setting up SSH keys..."
           mkdir -p /home/ubuntu/.ssh
           echo "${SSHPublicKey}" >> /home/ubuntu/.ssh/authorized_keys
           chmod 600 /home/ubuntu/.ssh/authorized_keys
           chown -R ubuntu:ubuntu /home/ubuntu/.ssh
 
-          # Extract the SSH public key for container use
-          SSH_KEY_FOR_CONTAINER="${SSHPublicKey}"
-
           # Build and run Docker container
-          log "Building Docker image..."
+          log "🐳 Building Docker image..."
           cd /mnt/data/QCBM-LSTM
 
-          # Wait for Docker to be ready
           until docker info > /dev/null 2>&1; do
-              log "Waiting for Docker to be ready..."
+              log "⏳ Waiting for Docker to be ready..."
               sleep 5
           done
 
-          # Build Docker image
           if [ -f "Dockerfile" ]; then
               docker build -t qcbm-dev .
-              log "Docker image built successfully"
+              log "✅ Docker image built successfully"
           else
-              log "ERROR: Dockerfile not found"
+              log "❌ ERROR: Dockerfile not found"
               exit 1
           fi
 
@@ -213,7 +188,7 @@ Resources:
           docker rm qcbm-dev 2>/dev/null || true
 
           # Run Docker container
-          log "Starting Docker container..."
+          log "🚀 Starting Docker container..."
           docker run -d \
             --name qcbm-dev \
             -p 8080:8080 \
@@ -223,14 +198,12 @@ Resources:
             --restart unless-stopped \
             qcbm-dev
 
-          # Wait for container to be ready
-          log "Waiting for container to be ready..."
           sleep 10
 
           # Configure SSH key in container
-          log "Configuring SSH key in container..."
+          log "🔧 Configuring SSH key in container..."
           docker exec qcbm-dev /bin/bash -c "
-              echo '$SSH_KEY_FOR_CONTAINER' > /home/devuser/.ssh/authorized_keys && \
+              echo '${SSHPublicKey}' > /home/devuser/.ssh/authorized_keys && \
               chmod 600 /home/devuser/.ssh/authorized_keys && \
               chown devuser:devuser /home/devuser/.ssh/authorized_keys
           "
@@ -244,11 +217,10 @@ Resources:
               exit 1
           fi
 
-          # Create status file
           echo "QCBM development environment setup completed at $(date)" > /mnt/data/setup-complete.txt
 
           log "🎉 QCBM development environment setup completed successfully!"
-          log "💰 Spot Instance saved you 60-90% on costs!"
+          log "💰 Spot Instance is saving you 60-90% on costs!"
           log "📋 Services available:"
           log "   - VSCode Web: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8080"
           log "   - SSH to container: ssh devuser@$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4) -p 2222"
@@ -284,3 +256,11 @@ Outputs:
   ContainerSSH:
     Description: SSH access to container (port 2222)
     Value: !Sub 'ssh -p 2222 devuser@${QcbmElasticIP}'
+
+  InstanceType:
+    Description: Instance type and billing
+    Value: !Sub '${InstanceType} (Spot - Max: ${SpotMaxPrice}/hour)'
+
+  CostSavings:
+    Description: Estimated cost savings with Spot Instance
+    Value: '60-90% savings compared to On-Demand pricing'
