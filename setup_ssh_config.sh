@@ -3,7 +3,7 @@
 # =============================
 # Configuration Variables
 # =============================
-STACK_NAME="qcbm-dev-stack"              # CloudFormation 스택 이름 (deploy.sh와 일치)
+STACK_NAME="qcbm-dev-cpu"              # CloudFormation 스택 이름 (deploy.sh와 일치)
 ALIAS_NAME="qcbm"                        # SSH 별칭
 USER_NAME="ubuntu"                       # EC2 기본 사용자 (Ubuntu 기준)
 PORT=22                                  # EC2 SSH 포트

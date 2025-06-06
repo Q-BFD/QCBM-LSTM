@@ -117,38 +117,29 @@ Resources:
                   success_log "System packages updated successfully"
                   break
               else
-                  error_log "Failed to update packages (attempt $i/3)"
+                  error_log "Failed to update packages (attempt $$i/3)"
                   sleep 10
               fi
           done
 
           # Install packages one by one with error handling
           log "📦 Installing basic packages..."
-          PACKAGES=(
-              "git"
-              "docker.io"
-              "python3-pip"
-              "awscli"
-              "curl"
-              "wget"
-              "unzip"
-              "nodejs"
-              "openssh-server"
-              "jq"
-              "lsblk"
-              "htop"
-              "vim"
-              "nano"
-          )
 
-          for package in "$${!PACKAGES[@]}"; do
-              log "Installing $${!PACKAGES[$package]}..."
-              if apt install -y "$${!PACKAGES[$package]}"; then
-                  success_log "$${!PACKAGES[$package]} installed successfully"
-              else
-                  error_log "Failed to install $${!PACKAGES[$package]}, continuing..."
-              fi
-          done
+          # Install packages individually (safer approach)
+          log "Installing git..."
+          apt install -y git && success_log "git installed successfully" || error_log "Failed to install git"
+
+          log "Installing docker.io..."
+          apt install -y docker.io && success_log "docker.io installed successfully" || error_log "Failed to install docker.io"
+
+          log "Installing python3-pip..."
+          apt install -y python3-pip && success_log "python3-pip installed successfully" || error_log "Failed to install python3-pip"
+
+          log "Installing awscli..."
+          apt install -y awscli && success_log "awscli installed successfully" || error_log "Failed to install awscli"
+
+          log "Installing basic tools..."
+          apt install -y curl wget unzip nodejs openssh-server jq htop vim nano && success_log "Basic tools installed" || error_log "Some basic tools failed"
 
           # Check disk space after package installation
           log "💾 Checking disk space after package installation..."
@@ -167,42 +158,44 @@ Resources:
           log "💾 Finding EBS volume..."
           EBS_DEVICE=""
           for i in {1..30}; do
-              DEVICE=$(lsblk -n -o NAME,MOUNTPOINT,SIZE | grep -v "/" | grep -E "(50G)" | head -1 | awk '{print $1}')
-              if [ ! -z "$DEVICE" ]; then
-                  if [[ $DEVICE == nvme* ]]; then
-                      EBS_DEVICE="/dev/$DEVICE"
+              DEVICE=$$(lsblk -n -o NAME,MOUNTPOINT,SIZE | grep -v "/" | grep "50G" | head -1 | cut -d' ' -f1)
+              if [ ! -z "$$DEVICE" ]; then
+                  if [[ $$DEVICE == nvme* ]]; then
+                      EBS_DEVICE="/dev/$$DEVICE"
                   else
-                      EBS_DEVICE="/dev/$DEVICE"
+                      EBS_DEVICE="/dev/$$DEVICE"
                   fi
-                  success_log "Found EBS volume: $EBS_DEVICE"
+                  success_log "Found EBS volume: $$EBS_DEVICE"
                   break
               fi
-              log "⏳ Waiting for EBS volume... (attempt $i/30)"
+              log "⏳ Waiting for EBS volume... (attempt $$i/30)"
               sleep 10
           done
 
-          if [ -z "$EBS_DEVICE" ]; then
+          if [ -z "$$EBS_DEVICE" ]; then
               error_log "Could not find EBS volume, continuing without data volume..."
               mkdir -p /mnt/data
               chown ubuntu:ubuntu /mnt/data
           else
-              # Format and mount EBS volume
-              log "🔧 Formatting and mounting EBS volume: $EBS_DEVICE"
+              # Format and mount EBS volume (improved logic)
+              log "🔧 Formatting and mounting EBS volume: $$EBS_DEVICE"
               mkdir -p /mnt/data
 
-              if ! blkid "$EBS_DEVICE" > /dev/null 2>&1; then
-                  log "📝 Formatting $EBS_DEVICE with ext4..."
-                  if mkfs.ext4 "$EBS_DEVICE"; then
-                      success_log "EBS volume formatted successfully"
-                  else
-                      error_log "Failed to format EBS volume"
-                  fi
+              # Always format new EBS volume (they come unformatted)
+              log "📝 Formatting $$EBS_DEVICE with ext4..."
+              if mkfs.ext4 "$$EBS_DEVICE"; then
+                  success_log "EBS volume formatted successfully"
+              else
+                  error_log "Failed to format EBS volume, trying to mount anyway..."
               fi
 
-              if mount "$EBS_DEVICE" /mnt/data; then
+              # Mount the volume
+              log "📌 Mounting $$EBS_DEVICE to /mnt/data..."
+              if mount "$$EBS_DEVICE" /mnt/data; then
                   success_log "EBS volume mounted successfully"
-                  echo "$EBS_DEVICE /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
+                  echo "$$EBS_DEVICE /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
                   chown ubuntu:ubuntu /mnt/data
+                  success_log "EBS volume setup completed"
               else
                   error_log "Failed to mount EBS volume"
               fi
@@ -224,10 +217,10 @@ Resources:
           log "🐍 Installing Python requirements (CPU only)..."
 
           # Check available space before installing
-          AVAILABLE_SPACE=$(df / | awk 'NR==2 {print $$4}')
-          log "Available disk space: $${!AVAILABLE_SPACE}KB"
+          AVAILABLE_SPACE=$$(df / | awk 'NR==2 {print $$4}')
+          log "Available disk space: $$AVAILABLE_SPACE KB"
 
-          if [ "$${!AVAILABLE_SPACE}" -lt 2000000 ]; then
+          if [ "$$AVAILABLE_SPACE" -lt 2000000 ]; then
               error_log "Insufficient disk space for package installation"
               log "Attempting to clean up..."
               apt autoremove -y
@@ -243,33 +236,30 @@ Resources:
               error_log "Failed to install PyTorch CPU"
           fi
 
-          # Install other packages individually
-          PYTHON_PACKAGES=(
-              "numpy==1.24.3"
-              "pandas==2.0.3"
-              "matplotlib==3.7.2"
-              "scikit-learn==1.3.0"
-              "jupyter==1.0.0"
-              "notebook==7.0.2"
-              "qiskit==0.43.1"
-              "tqdm==4.65.0"
-          )
+          # Install other packages individually to avoid array issues
+          log "Installing numpy..."
+          pip3 install --no-cache-dir "numpy==1.24.3" && success_log "numpy installed" || error_log "numpy failed"
 
-          for package in "$${!PYTHON_PACKAGES[@]}"; do
-              log "Installing Python package: $${!PYTHON_PACKAGES[$package]}"
-              if pip3 install --no-cache-dir "$${!PYTHON_PACKAGES[$package]}"; then
-                  success_log "Successfully installed $${!PYTHON_PACKAGES[$package]}"
-              else
-                  error_log "Failed to install $${!PYTHON_PACKAGES[$package]}, continuing..."
-              fi
-              
-              # Check disk space after each package
-              AVAILABLE_SPACE=$(df / | awk 'NR==2 {print $$4}')
-              if [ "$${!AVAILABLE_SPACE}" -lt 1000000 ]; then
-                  log "Low disk space detected, cleaning up..."
-                  pip3 cache purge
-              fi
-          done
+          log "Installing pandas..."
+          pip3 install --no-cache-dir "pandas==2.0.3" && success_log "pandas installed" || error_log "pandas failed"
+
+          log "Installing matplotlib..."
+          pip3 install --no-cache-dir "matplotlib==3.7.2" && success_log "matplotlib installed" || error_log "matplotlib failed"
+
+          log "Installing scikit-learn..."
+          pip3 install --no-cache-dir "scikit-learn==1.3.0" && success_log "scikit-learn installed" || error_log "scikit-learn failed"
+
+          log "Installing jupyter..."
+          pip3 install --no-cache-dir "jupyter==1.0.0" && success_log "jupyter installed" || error_log "jupyter failed"
+
+          log "Installing notebook..."
+          pip3 install --no-cache-dir "notebook==7.0.2" && success_log "notebook installed" || error_log "notebook failed"
+
+          log "Installing qiskit..."
+          pip3 install --no-cache-dir "qiskit==0.43.1" && success_log "qiskit installed" || error_log "qiskit failed"
+
+          log "Installing tqdm..."
+          pip3 install --no-cache-dir "tqdm==4.65.0" && success_log "tqdm installed" || error_log "tqdm failed"
 
           # Set up SSH keys
           log "🔑 Setting up SSH keys..."

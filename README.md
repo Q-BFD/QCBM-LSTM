@@ -532,142 +532,106 @@ chmod 600 ~/.ssh/[KEY_NAME].pem
 aws cloudformation describe-stacks --stack-name [STACK_NAME] \
   --query 'Stacks[0].StackStatus' --output text
 
+# 스택 출력 정보 확인 (JSON 형태)
+aws cloudformation describe-stacks --stack-name [STACK_NAME] \
+  --output json | jq -r '.Stacks[0].Outputs[] | "\(.OutputKey): \(.OutputValue)"'
+
 # 스택 삭제
 aws cloudformation delete-stack --stack-name [STACK_NAME]
+
+# 스택 삭제 완료 대기
+aws cloudformation wait stack-delete-complete --stack-name [STACK_NAME]
 
 # 실패한 리소스 확인
 aws cloudformation describe-stack-events --stack-name [STACK_NAME] \
   --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
   --output table
+
+# CloudFormation 템플릿 문법 검증
+aws cloudformation validate-template --template-body file://cloudformation-cpu.yml
 ```
 
-### 🖼️ **AMI 이미지 관리**
-
-#### 최신 Ubuntu AMI 검색
+#### 🚨 **CloudFormation 템플릿 디버깅**
 
 ```bash
-# 최신 Ubuntu 22.04 AMI 찾기
-aws ec2 describe-images --owners 099720109477 \
-  --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" \
-            "Name=state,Values=available" \
-  --query 'Images[*].[ImageId,Name,CreationDate]' \
-  --output table | head -10
+# 템플릿 변수 참조 오류 확인
+# "Unresolved resource dependencies" 오류 발생 시:
+grep -n "\${[^}]*}" cloudformation-cpu.yml  # bash 변수가 CloudFormation 변수로 인식되는 경우
 
-# 특정 AMI 존재 확인
-aws ec2 describe-images --image-ids [AMI_ID]
+# bash 변수 escape 확인 (UserData에서 $$ 사용해야 함)
+grep -n "\$[A-Z_]" cloudformation-cpu.yml | grep -v "\$\$"  # escape되지 않은 변수 찾기
+
+# Fn::Sub 문법 검증
+grep -A5 -B5 "Fn::Sub\|!Sub" cloudformation-cpu.yml
 ```
 
-### 🔗 **SSH 연결 및 원격 관리**
+### 🏗️ **인프라 폴더 및 다중 인스턴스 관리**
 
-#### 기본 SSH 연결
+#### 여러 인스턴스 타입 배포
 
 ```bash
-# EC2 인스턴스 접속
-ssh qcbm
+# CPU 테스트 인스턴스 배포 (GPU 할당량 불필요)
+cd infra
+./deploy-cpu.sh
 
-# Docker 컨테이너 접속
-ssh qcbm-container
+# GPU 온디맨드 인스턴스 배포
+./deploy-ondemand.sh
 
-# SSH 연결 테스트
-ssh qcbm "whoami && pwd"
+# GPU Spot 인스턴스 배포 (60-90% 절약)
+./deploy-spot.sh
+
+# 스택별 상태 확인
+aws cloudformation describe-stacks --stack-name qcbm-dev-cpu
+aws cloudformation describe-stacks --stack-name qcbm-dev-ondemand
+aws cloudformation describe-stacks --stack-name qcbm-dev-spot
 ```
 
-#### 시스템 정보 확인
+#### 인프라 정리 및 관리
 
 ```bash
-# 블록 디바이스 확인
-ssh qcbm "lsblk"
+# 모든 QCBM 스택 확인
+aws cloudformation list-stacks --query 'StackSummaries[?starts_with(StackName, `qcbm-dev`)].[StackName,StackStatus]' --output table
 
-# 인스턴스 공개 IP 확인
-ssh qcbm "curl -s http://169.254.169.254/latest/meta-data/public-ipv4"
+# 특정 타입 스택만 삭제
+aws cloudformation delete-stack --stack-name qcbm-dev-cpu
+aws cloudformation delete-stack --stack-name qcbm-dev-ondemand
+aws cloudformation delete-stack --stack-name qcbm-dev-spot
 
-# SSH 키 확인
-ssh qcbm "cat ~/.ssh/authorized_keys"
+# 여러 스택 일괄 삭제
+for stack in qcbm-dev-cpu qcbm-dev-ondemand qcbm-dev-spot; do
+  aws cloudformation delete-stack --stack-name $stack
+done
 ```
 
-### 💾 **EBS 볼륨 관리**
+### 📊 **UserData 실행 모니터링**
 
-#### EBS 볼륨 수동 마운트
+#### 실시간 설정 로그 확인
 
 ```bash
-# EBS 볼륨 포맷 및 마운트
-ssh qcbm "sudo mkfs.ext4 /dev/nvme1n1 && \
-          sudo mkdir -p /mnt/data && \
-          sudo mount /dev/nvme1n1 /mnt/data"
+# UserData 스크립트 실행 상태 실시간 모니터링
+ssh -i ~/.ssh/qcbm-dev-key.pem ubuntu@[ELASTIC_IP] 'tail -f /var/log/qcbm-setup.log'
 
-# 영구 마운트 설정
-ssh qcbm "echo '/dev/nvme1n1 /mnt/data ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab"
+# 성공/실패 상태만 필터링
+ssh ubuntu@[ELASTIC_IP] 'tail -50 /var/log/qcbm-setup.log | grep -E "(SUCCESS|ERROR|✅|❌|🎉)"'
+
+# 특정 설정 단계 확인
+ssh ubuntu@[ELASTIC_IP] 'grep -n -A3 -B1 "Installing docker.io" /var/log/qcbm-setup.log'
+
+# 디스크 공간 변화 추적
+ssh ubuntu@[ELASTIC_IP] 'grep "disk space" /var/log/qcbm-setup.log'
 ```
 
-### 📁 **Git 및 파일 관리**
-
-#### 리포지토리 관리
+#### UserData 실행 완료 확인
 
 ```bash
-# Git 리포지토리 클론
-ssh qcbm "cd /mnt/data && sudo git clone https://github.com/Q-BFD/QCBM-LSTM.git"
+# 설정 완료 파일 확인
+ssh ubuntu@[ELASTIC_IP] 'ls -la /mnt/data/setup-complete.txt 2>/dev/null && echo "✅ 설정 완료" || echo "⏳ 설정 진행 중"'
 
-# 디렉토리 내용 확인
-ssh qcbm "ls -la /mnt/data/QCBM-LSTM/"
+# Docker 설치 및 실행 상태 확인
+ssh ubuntu@[ELASTIC_IP] 'docker --version 2>/dev/null && echo "✅ Docker 설치됨" || echo "❌ Docker 미설치"'
 
-# 특정 파일 찾기
-ssh qcbm "find /mnt/data/QCBM-LSTM -name 'requirements.txt' -o -name 'Dockerfile'"
-```
-
-### 🐳 **Docker 관리**
-
-#### Docker 상태 확인
-
-```bash
-# Docker 컨테이너 상태 확인
-ssh qcbm "sudo docker ps -a"
-
-# Docker 컨테이너 로그 확인
-ssh qcbm "sudo docker logs [CONTAINER_NAME]"
-
-# Docker 사용자 권한 추가
-ssh qcbm "sudo usermod -aG docker ubuntu"
-```
-
-#### Docker 컨테이너 관리
-
-```bash
-# 컨테이너 재시작
-ssh qcbm "docker restart [CONTAINER_NAME]"
-
-# 컨테이너 내부 명령 실행
-ssh qcbm "docker exec [CONTAINER_NAME] /bin/bash -c '[COMMAND]'"
-
-# Docker 이미지 빌드
-ssh qcbm "cd /mnt/data/QCBM-LSTM && docker build -t [IMAGE_NAME] ."
-```
-
-### 🚨 **문제 해결 및 디버깅**
-
-#### 로그 확인
-
-```bash
-# Cloud-init 로그 확인
-ssh qcbm "sudo tail -30 /var/log/cloud-init-output.log"
-
-# 사용자 정의 설정 로그 확인
-ssh qcbm "tail -20 /var/log/qcbm-setup.log"
-
-# 시스템 상태 확인
-ssh qcbm "systemctl status docker"
-```
-
-#### SSH 설정 확인
-
-```bash
-# 로컬 SSH 공개키 확인
-cat ~/.ssh/id_ed25519.pub
-
-# SSH config 설정 확인
-cat ~/.ssh/config | grep -A10 "qcbm-container"
-
-# SSH 연결 상세 디버깅
-ssh -v qcbm-container
+# Python 패키지 설치 상태 확인
+ssh ubuntu@[ELASTIC_IP] 'python3 -c "import qiskit; print(f\"✅ Qiskit {qiskit.__version__}\")" 2>/dev/null || echo "❌ Qiskit 미설치"'
 ```
 
 ### 🔧 **환경 초기화 및 재설정**
@@ -675,10 +639,15 @@ ssh -v qcbm-container
 #### 완전 재배포
 
 ```bash
-# 스택 삭제 후 재배포
-aws cloudformation delete-stack --stack-name qcbm-dev-stack
-# 삭제 완료 대기 후
-./deploy.sh
+# 스택 삭제 후 재배포 (CPU 테스트용)
+aws cloudformation delete-stack --stack-name qcbm-dev-cpu
+aws cloudformation wait stack-delete-complete --stack-name qcbm-dev-cpu
+./infra/deploy-cpu.sh
+
+# 스택 삭제 후 재배포 (GPU 온디맨드)
+aws cloudformation delete-stack --stack-name qcbm-dev-ondemand
+aws cloudformation wait stack-delete-complete --stack-name qcbm-dev-ondemand
+./infra/deploy-ondemand.sh
 ```
 
 #### 컨테이너 재구축
@@ -693,25 +662,9 @@ ssh qcbm "cd /mnt/data/QCBM-LSTM && \
           docker run -d --name qcbm-dev \
             -p 8080:8080 -p 2222:22 \
             -v /mnt/data:/mnt/data \
+            -v /mnt/data/QCBM-LSTM:/home/devuser/workspace \
+            --restart unless-stopped \
             qcbm-dev"
-```
-
-### 📊 **성능 모니터링**
-
-#### 시스템 리소스 확인
-
-```bash
-# 디스크 사용량 확인
-ssh qcbm "df -h"
-
-# 메모리 사용량 확인
-ssh qcbm "free -h"
-
-# CPU 사용률 확인
-ssh qcbm "top -bn1 | head -20"
-
-# Docker 리소스 사용량
-ssh qcbm "docker stats --no-stream"
 ```
 
 ### 🎯 **주요 사용 시나리오**
@@ -720,9 +673,10 @@ ssh qcbm "docker stats --no-stream"
 
 1. **CloudFormation 스택 상태 확인**
 2. **EC2 인스턴스 SSH 연결 확인**
-3. **Docker 컨테이너 상태 확인**
-4. **EBS 볼륨 마운트 상태 확인**
-5. **로그 파일 확인**
+3. **UserData 스크립트 실행 상태 확인**
+4. **Docker 컨테이너 상태 확인**
+5. **EBS 볼륨 마운트 상태 확인**
+6. **로그 파일 확인**
 
 #### 🔄 **정기 유지보수**
 
@@ -741,10 +695,42 @@ ssh qcbm "echo '=== System Info ===' && \
           df -h && \
           echo '=== Docker Status ===' && \
           docker ps -a && \
+          echo '=== Setup Progress ===' && \
+          tail -10 /var/log/qcbm-setup.log && \
           echo '=== Mount Points ===' && \
           mount | grep /mnt/data"
+
+# 환경 설정 완료 상태 종합 확인
+ssh ubuntu@[ELASTIC_IP] "echo '=== 🔍 환경 설정 상태 확인 ===' && \
+  echo '1. Docker:' && (docker --version 2>/dev/null && echo '✅ OK' || echo '❌ FAIL') && \
+  echo '2. Python:' && (python3 --version 2>/dev/null && echo '✅ OK' || echo '❌ FAIL') && \
+  echo '3. Qiskit:' && (python3 -c 'import qiskit; print(f\"✅ {qiskit.__version__}\")' 2>/dev/null || echo '❌ FAIL') && \
+  echo '4. EBS Mount:' && (mount | grep /mnt/data && echo '✅ OK' || echo '❌ FAIL') && \
+  echo '5. Git Repo:' && (ls /mnt/data/QCBM-LSTM && echo '✅ OK' || echo '❌ FAIL')"
+```
+
+#### 🏗️ **인스턴스 타입별 특화 명령어**
+
+```bash
+# GPU 인스턴스에서 GPU 상태 확인
+ssh qcbm "nvidia-smi"  # GPU 인스턴스에서만 사용 가능
+
+# CPU 인스턴스에서 Jupyter 서비스 확인
+curl -I http://[ELASTIC_IP]:8888  # CPU 테스트 인스턴스에서 Jupyter 확인
+
+# 인스턴스 타입 확인
+ssh qcbm "curl -s http://169.254.169.254/latest/meta-data/instance-type"
+
+# 사용 가능한 서비스 포트 확인
+ssh qcbm "netstat -tlnp | grep -E ':(22|2222|8080|8888)'"
 ```
 
 ---
 
 > 💡 **팁**: 이 명령어들은 자동화 스크립트 개발 과정에서 실제 사용된 것들입니다. 문제 해결이나 커스터마이징 시 참고하여 사용하세요.
+>
+> 🔧 **오늘 해결한 주요 문제들**:
+>
+> - CloudFormation bash 변수 escape 문제 (`$변수` → `$$변수`)
+> - UserData 스크립트 for loop 문제 (개별 명령어 방식으로 변경)
+> - infra 폴더 일원화 및 다중 인스턴스 타입 지원
