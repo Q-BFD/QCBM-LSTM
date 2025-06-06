@@ -2,7 +2,7 @@
 # 1. CloudFormation Template
 # =============================
 AWSTemplateFormatVersion: '2010-09-09'
-Description: QCBM Dev Env - EC2 with Docker + EBS + Elastic IP + Inject SSH Key
+Description: QCBM Dev Env - EC2 with GPU Docker + EBS + Elastic IP + Inject SSH Key
 
 Parameters:
   KeyName:
@@ -10,11 +10,20 @@ Parameters:
     Description: Name of an existing EC2 KeyPair
   InstanceType:
     Type: String
-    Default: t3.medium
+    Default: g4dn.2xlarge
+    AllowedValues:
+      - g4dn.xlarge
+      - g4dn.2xlarge
+      - g4dn.4xlarge
+      - g5.xlarge
+      - g5.2xlarge
+      - g5.4xlarge
+      - p3.2xlarge
+    Description: GPU-enabled EC2 instance type for quantum ML workloads
   VolumeSize:
     Type: Number
-    Default: 50
-    Description: Size of the EBS volume in GiB
+    Default: 100
+    Description: Size of the EBS volume in GiB (increased for GPU packages)
   SSHPublicKey:
     Type: String
     Description: SSH public key to be added to authorized_keys (paste your ~/.ssh/id_rsa.pub content here)
@@ -138,7 +147,7 @@ Resources:
           log "Cloning QCBM-LSTM repository..."
           cd /mnt/data
           if [ ! -d "QCBM-LSTM" ]; then
-              git clone https://github.com/Q-BFD/QCBM-LSTM.git
+              git clone -b automation https://github.com/Q-BFD/QCBM-LSTM.git
               chown -R ubuntu:ubuntu QCBM-LSTM
           fi
 
