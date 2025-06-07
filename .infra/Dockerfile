@@ -1,76 +1,52 @@
 # =============================
 # QCBM-LSTM Development Environment Dockerfile
 # =============================
-FROM ubuntu:22.04
+FROM python:3.9-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV LANG=C.UTF-8
-
-# Install system packages
-RUN apt update && apt install -y \
+# 시스템 패키지 설치
+RUN apt-get update && apt-get install -y \
+    git \
     curl \
     wget \
-    git \
-    python3 \
-    python3-pip \
-    python3-dev \
-    sudo \
     unzip \
-    build-essential \
-    software-properties-common \
-    locales \
-    openssh-server \
     nodejs \
-    vim \
-    nano \
-    htop \
+    npm \
+    openssh-server \
+    sudo \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure SSH server
+# SSH 서버 설정
 RUN mkdir /var/run/sshd && \
     echo 'PermitRootLogin no' >> /etc/ssh/sshd_config && \
     echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config && \
-    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config && \
-    echo 'AuthorizedKeysFile %h/.ssh/authorized_keys' >> /etc/ssh/sshd_config
+    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
 
-# Create devuser with sudo privileges
+# 개발자 사용자 생성
 RUN useradd -m -s /bin/bash devuser && \
     echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     mkdir -p /home/devuser/.ssh && \
     chmod 700 /home/devuser/.ssh && \
-    touch /home/devuser/.ssh/authorized_keys && \
-    chmod 600 /home/devuser/.ssh/authorized_keys && \
     chown -R devuser:devuser /home/devuser/.ssh
 
-# Install Python packages
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
+# 작업 디렉토리 설정
+WORKDIR /workspace
 
-# Install code-server (VSCode Web)
-RUN curl -fsSL https://code-server.dev/install.sh | sh
+# Python 패키지 설치
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt \
+    && pip3 install --no-cache-dir \
+    jupyterlab>=4.0.0 \
+    notebook>=7.0.0 \
+    ipywidgets>=8.0.0
 
-# Switch to devuser
-USER devuser
-WORKDIR /home/devuser
+# JupyterLab 설정
+EXPOSE 8888 8080 22
+ENV JUPYTER_ENABLE_LAB=yes
+ENV JUPYTER_TOKEN=qcbmtoken
 
-# Configure code-server
-RUN mkdir -p ~/.config/code-server && \
-    echo "bind-addr: 0.0.0.0:8080" > ~/.config/code-server/config.yaml && \
-    echo "auth: password" >> ~/.config/code-server/config.yaml && \
-    echo "password: qcbmpassword" >> ~/.config/code-server/config.yaml && \
-    echo "cert: false" >> ~/.config/code-server/config.yaml
+# 시작 스크립트
+COPY start.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/start.sh
 
-# Create startup script
-USER root
-RUN echo '#!/bin/bash\n\
-/usr/sbin/sshd -D &\n\
-su - devuser -c "code-server --host 0.0.0.0 --port 8080" &\n\
-wait\n' > /start.sh && \
-    chmod +x /start.sh
-
-# Expose ports
-EXPOSE 8080 22
-
-# Start services
-CMD ["/start.sh"]
+CMD ["/usr/local/bin/start.sh"]

@@ -256,103 +256,78 @@ if [ "${MOUNT_OK}" = true ]; then
             chown -R ubuntu:ubuntu "${REPO_NAME}"
         else
             error_log "Failed to clone repository"
+            exit 1
         fi
     fi
     
-    log "📋 Using requirements.txt from repository..."
     cd "/mnt/data/${REPO_NAME}"
-    if [ -f "requirements.txt" ]; then
-        log "Requirements file found in repository:"
-        head -10 requirements.txt | tee -a "/var/log/${PROJECT_NAME}-setup.log"
-        success_log "Using repository requirements.txt"
-    else
-        error_log "No requirements.txt found in repository"
-        log "Creating minimal requirements.txt as fallback..."
+    
+    # Docker 이미지 빌드 준비
+    log "🐳 Preparing Docker environment..."
+    
+    # requirements.txt 확인 또는 생성
+    if [ ! -f "requirements.txt" ]; then
+        log "Creating minimal requirements.txt..."
         {
             echo "numpy>=1.24.0"
-            echo "jupyter>=1.0.0"
             echo "qiskit>=1.0.0"
+            echo "pandas>=2.0.0"
+            echo "scikit-learn>=1.0.0"
+            echo "torch>=2.0.0"
+            echo "matplotlib>=3.5.0"
+            echo "seaborn>=0.12.0"
         } > requirements.txt
+        success_log "Created requirements.txt"
     fi
     
-    log "🧹 Cleaning system before package installation..."
-    apt autoremove -y 2>/dev/null || true
-    apt autoclean 2>/dev/null || true
-    docker system prune -f 2>/dev/null || true
+    # Dockerfile 및 시작 스크립트 복사
+    log "📝 Copying Docker configuration files..."
+    mkdir -p .infra
+    cp /mnt/data/${REPO_NAME}/.infra/Dockerfile .
+    cp /mnt/data/${REPO_NAME}/.infra/start.sh .
+    chmod +x start.sh
     
-    AVAILABLE_SPACE_BEFORE=$(df / | awk 'NR==2 {print $4}')
-    log "Available disk space before Python packages: ${AVAILABLE_SPACE_BEFORE} KB"
-    
-    log "🐍 Installing Python packages in stages..."
-    log "Stage 1: Installing core packages..."
-    pip3 install --no-cache-dir --upgrade pip
-    pip3 install --no-cache-dir "numpy>=1.24.0" && success_log "numpy installed" || error_log "numpy failed"
-    
-    SPACE_CHECK=$(df / | awk 'NR==2 {print $4}')
-    if [ "${SPACE_CHECK}" -lt 1000000 ]; then
-        log "Low disk space detected, cleaning up..."
-        apt autoremove -y && apt autoclean
-        pip3 cache purge 2>/dev/null || true
-    fi
-    
-    log "Stage 2: Installing Jupyter..."
-    pip3 install --no-cache-dir "jupyter>=1.0.0" "notebook>=7.0.0" && success_log "Jupyter installed" || error_log "Jupyter failed"
-    
-    log "Stage 3: Installing utilities..."
-    pip3 install --no-cache-dir "tqdm>=4.65.0" && success_log "tqdm installed" || error_log "tqdm failed"
-    
-    log "Stage 4: Installing Qiskit (latest version)..."
-    if pip3 install --no-cache-dir "qiskit>=1.0.0"; then
-        success_log "Qiskit latest version installed successfully"
+    # Docker 이미지 빌드
+    log "🏗️ Building Docker image..."
+    if docker build -t "${PROJECT_NAME}-dev" .; then
+        success_log "Docker image built successfully"
+        
+        # 기존 컨테이너 정리
+        if docker ps -a | grep -q "${PROJECT_NAME}-dev"; then
+            log "Cleaning up existing containers..."
+            docker rm -f "${PROJECT_NAME}-dev" || true
+        fi
+        
+        # Docker 컨테이너 실행
+        log "🚀 Starting Docker container..."
+        if docker run -d \
+            --name "${PROJECT_NAME}-dev" \
+            -p 8888:8888 \
+            -p 8080:8080 \
+            -p 2222:22 \
+            -v "/mnt/data/${REPO_NAME}:/workspace" \
+            -v "/home/ubuntu/.ssh/authorized_keys:/home/devuser/.ssh/authorized_keys:ro" \
+            --restart unless-stopped \
+            "${PROJECT_NAME}-dev"; then
+            success_log "Docker container started successfully"
+            
+            # 서비스 접근 정보 출력
+            PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "CHECK_AWS_CONSOLE")
+            log "📋 Available services:"
+            log "   - JupyterLab: http://${PUBLIC_IP}:8888 (token: qcbmtoken)"
+            log "   - SSH 접속: ssh -p 2222 devuser@${PUBLIC_IP}"
+            log "💾 Final disk space usage:"
+            df -h | tee -a "/var/log/${PROJECT_NAME}-setup.log"
+            success_log "Setup script completed successfully!"
+        else
+            error_log "Failed to start Docker container"
+            exit 1
+        fi
     else
-        log "Attempting Qiskit with specific compatible version..."
-        pip3 install --no-cache-dir "qiskit==1.0.2" && success_log "Qiskit 1.0.2 installed" || error_log "Qiskit installation failed"
+        error_log "Failed to build Docker image"
+        exit 1
     fi
-    
-    log "🔑 Setting up SSH keys..."
-    mkdir -p /home/ubuntu/.ssh
-    echo "${SSHPublicKey}" >> /home/ubuntu/.ssh/authorized_keys
-    chmod 600 /home/ubuntu/.ssh/authorized_keys
-    chown -R ubuntu:ubuntu /home/ubuntu/.ssh
-    success_log "SSH keys configured"
-    
-    log "🪐 Starting Jupyter Notebook server on host..."
-    cd "/mnt/data/${REPO_NAME}" || cd /mnt/data || cd /home/ubuntu
-    if which jupyter >/dev/null 2>&1; then
-        nohup sudo -u ubuntu jupyter notebook \
-            --ip=0.0.0.0 \
-            --port=8888 \
-            --no-browser \
-            --notebook-dir="/mnt/data/${REPO_NAME}" \
-            --NotebookApp.token="${PROJECT_NAME}token" \
-            --NotebookApp.password='' \
-            --allow-root > /var/log/jupyter.log 2>&1 &
-        success_log "Jupyter Notebook started successfully"
-    else
-        error_log "Jupyter not available, skipping..."
-    fi
-    
-    log "🐳 Docker installed but will be configured after EBS mount"
-    echo "${PROJECT_NAME} development environment setup completed at $(date)" > "/mnt/data/${REPO_NAME}/setup-complete.txt" 2>/dev/null || echo "Setup completed" > /tmp/setup-complete.txt
-    
-    log "🎉 ${PROJECT_NAME} development environment setup completed!"
-    log "🧪 CPU Test Instance setup finished"
-    log "📋 Available services:"
-    
-    PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "CHECK_AWS_CONSOLE")
-    log "   - Jupyter Notebook: http://${PUBLIC_IP}:8888 (token: ${PROJECT_NAME}token)"
-    
-    if docker ps | grep -q "${PROJECT_NAME}-dev"; then
-        log "   - VSCode Web: http://${PUBLIC_IP}:8080"
-        log "   - SSH to container: ssh devuser@${PUBLIC_IP} -p 2222"
-    fi
-    
-    log "   - SSH to EC2: ssh ubuntu@${PUBLIC_IP}"
-    log "🚀 Next: Test environment, then request GPU quota for g4dn.2xlarge"
-    log "💾 Final disk space usage:"
-    df -h | tee -a "/var/log/${PROJECT_NAME}-setup.log"
-    success_log "Setup script completed successfully!"
 else
-    error_log "EBS volume not mounted, skipping repository clone and setup."
+    error_log "EBS volume not mounted, skipping setup."
     exit 1
 fi
