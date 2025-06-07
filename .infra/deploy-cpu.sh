@@ -18,6 +18,10 @@ VOLUME_SIZE="50"  # Smaller storage for testing
 GIT_REPOSITORY="https://github.com/Q-BFD/QCBM-LSTM.git"
 GIT_BRANCH="automation"
 
+# SSH key configuration
+SSH_PRIVATE_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier"
+SSH_PRIVATE_KEY_FILE_EXPANDED="${SSH_PRIVATE_KEY_FILE/#\~/$HOME}"
+
 # Parse setup script information from Git repository
 SETUP_SCRIPT_PATH=".infra/setup_full.sh"
 
@@ -67,6 +71,9 @@ if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
     echo "  ssh-keygen -t rsa -b 4096 -C 'your_email@example.com'"
     exit 1
 fi
+
+# Read private key content
+SSH_PRIVATE_KEY=$(cat "$SSH_PRIVATE_KEY_FILE_EXPANDED")
 
 # =============================
 # AWS EC2 Key Pair Management
@@ -120,6 +127,7 @@ aws cloudformation deploy \
     ProjectName="$PROJECT_NAME" \
     KeyName="$KEY_NAME" \
     SSHPublicKey="$SSH_PUBLIC_KEY" \
+    SSHPrivateKey="$SSH_PRIVATE_KEY" \
     InstanceType="$INSTANCE_TYPE" \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \

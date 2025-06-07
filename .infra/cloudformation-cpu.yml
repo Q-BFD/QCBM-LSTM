@@ -36,6 +36,10 @@ Parameters:
     Description: SSH public key to be added to authorized_keys
     AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
     ConstraintDescription: Must be a valid SSH public key
+  SSHPrivateKey:
+    Type: String
+    Description: SSH private key for Git operations
+    NoEcho: true
   GitRepository:
     Type: String
     Description: Git repository URL to clone
@@ -117,14 +121,20 @@ Resources:
           #!/bin/bash
           set -e
 
+          # Export SSH keys for setup script
+          export SSHPublicKey='${SSHPublicKey}'
+          export SSHPrivateKey='${SSHPrivateKey}'
+
           # Validate required parameters
           if [ -z "${SetupScriptOrg}" ] || [ -z "${SetupScriptRepo}" ] || [ -z "${SetupScriptBranch}" ] || [ -z "${SetupScriptPath}" ]; then
             echo "ERROR: All setup script parameters (organization, repository, branch, path) are required"
             exit 1
           fi
 
-          # Export SSH key for setup script
-          export SSHPublicKey='${SSHPublicKey}'
+          # Save private key for Docker build
+          mkdir -p /tmp/ssh
+          echo "$SSHPrivateKey" > /tmp/ssh/id_ed25519
+          chmod 600 /tmp/ssh/id_ed25519
 
           # Construct setup script URL from parameters
           SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
@@ -148,6 +158,9 @@ Resources:
             --volume-size ${VolumeSize} \
             --git ${GitRepository} \
             --branch ${GitBranch}
+
+          # Clean up sensitive data
+          rm -rf /tmp/ssh
 
   ProjectElasticIP:
     Type: AWS::EC2::EIP
