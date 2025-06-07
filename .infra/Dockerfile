@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir /var/run/sshd && \
     echo 'PermitRootLogin no' >> /etc/ssh/sshd_config && \
     echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config && \
-    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
+    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config && \
+    echo 'AuthorizedKeysFile %h/.ssh/authorized_keys' >> /etc/ssh/sshd_config
 
 # 개발자 사용자 생성
 RUN useradd -m -s /bin/bash devuser && \
@@ -44,6 +45,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt \
 EXPOSE 8888 8080 22
 ENV JUPYTER_ENABLE_LAB=yes
 ENV JUPYTER_TOKEN=qcbmtoken
+
+# SSH 키 환경 변수
+ENV SSH_PUBLIC_KEY=""
 
 # 시작 스크립트
 COPY start.sh /usr/local/bin/

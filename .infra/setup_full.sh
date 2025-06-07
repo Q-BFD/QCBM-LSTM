@@ -306,7 +306,7 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 8080:8080 \
             -p 2222:22 \
             -v "/mnt/data/${REPO_NAME}:/workspace" \
-            -v "/home/ubuntu/.ssh/authorized_keys:/home/devuser/.ssh/authorized_keys:ro" \
+            -e "SSH_PUBLIC_KEY=${SSHPublicKey}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then
             success_log "Docker container started successfully"
