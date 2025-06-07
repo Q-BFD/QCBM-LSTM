@@ -307,6 +307,7 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 2222:22 \
             -v "/mnt/data/${REPO_NAME}:/workspace" \
             -e "SSH_PUBLIC_KEY=${SSHPublicKey}" \
+            -e "SSH_PRIVATE_KEY=${SSHPrivateKey}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then
             success_log "Docker container started successfully"

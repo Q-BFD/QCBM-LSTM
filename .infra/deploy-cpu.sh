@@ -10,17 +10,14 @@ INSTANCE_TYPE="${2:-t3.large}"
 [ -z "$PROJECT_NAME" ] && { echo "Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"; exit 1; }
 
 STACK_NAME="${PROJECT_NAME}-dev-cpu"
-KEY_NAME="${PROJECT_NAME}-dev-key"  # AWS EC2 Key Pair name
-SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"  # Path to your SSH public key file
+# 🔑 모든 인스턴스에 사용할 고정된 키 페어 이름과 파일 경로
+KEY_NAME="qb-frontier-global-key"
+SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"
 VOLUME_SIZE="50"  # Smaller storage for testing
 
 # Git repository configuration
 GIT_REPOSITORY="https://github.com/Q-BFD/QCBM-LSTM.git"
 GIT_BRANCH="automation"
-
-# SSH key configuration
-SSH_PRIVATE_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier"
-SSH_PRIVATE_KEY_FILE_EXPANDED="${SSH_PRIVATE_KEY_FILE/#\~/$HOME}"
 
 # Parse setup script information from Git repository
 SETUP_SCRIPT_PATH=".infra/setup_full.sh"
@@ -72,59 +69,52 @@ if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
     exit 1
 fi
 
-# Read private key content
-SSH_PRIVATE_KEY=$(cat "$SSH_PRIVATE_KEY_FILE_EXPANDED")
-
 # =============================
 # AWS EC2 Key Pair Management
 # =============================
-echo "🔑 Checking AWS EC2 Key Pair: $KEY_NAME"
+echo "🔍 Using global key '$KEY_NAME' for all instances."
+SSH_PUBLIC_KEY_FILE_EXPANDED="${SSH_PUBLIC_KEY_FILE/#\~/$HOME}"
 
-# 로컬에 키 파일이 있는지 확인
-KEY_FILE="$HOME/.ssh/${KEY_NAME}.pem"
-if [ -f "$KEY_FILE" ]; then
-    echo "✅ Key Pair file exists locally: $KEY_FILE"
-else
-    echo "⚠️ Key Pair file not found locally. Checking AWS..."
-    
-    # AWS에 키 페어가 존재하는지 확인
-    if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
-        echo "❌ Error: Key Pair exists in AWS but local file is missing"
-        echo "Please delete the key pair from AWS and try again:"
-        echo "aws ec2 delete-key-pair --key-name $KEY_NAME"
-        exit 1
-    else
-        echo "🔑 Creating new Key Pair: $KEY_NAME"
-        # 키 페어 생성 및 저장
-        if aws ec2 create-key-pair --key-name "$KEY_NAME" --query 'KeyMaterial' --output text > "$KEY_FILE"; then
-            chmod 600 "$KEY_FILE"
-            echo "✅ Key Pair created successfully: $KEY_FILE"
-        else
-            echo "❌ Failed to create Key Pair"
-            rm -f "$KEY_FILE"  # 실패한 경우 불완전한 파일 제거
-            exit 1
-        fi
-    fi
+if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
+    echo "❌ Error: SSH public key file not found at: $SSH_PUBLIC_KEY_FILE_EXPANDED"
+    exit 1
 fi
 
-# 키 파일 권한 확인
-KEY_PERMS=$(stat -f "%Lp" "$KEY_FILE")
-if [ "$KEY_PERMS" != "600" ]; then
-    echo "⚠️ Fixing Key Pair file permissions..."
-    chmod 600 "$KEY_FILE"
+# AWS에 최신 로컬 공개 키를 등록합니다.
+echo "   Ensuring AWS Key Pair '$KEY_NAME' is up-to-date with local key..."
+if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
+    aws ec2 delete-key-pair --key-name "$KEY_NAME"
 fi
+
+# 공개 키에서 주석을 제거하고 AWS로 가져옵니다.
+KEY_MATERIAL=$(awk '{print $1" "$2}' "$SSH_PUBLIC_KEY_FILE_EXPANDED")
+aws ec2 import-key-pair --key-name "$KEY_NAME" --public-key-material "$KEY_MATERIAL"
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to import SSH public key to AWS EC2."
+    echo "   Please check the key format and AWS permissions."
+    exit 1
+fi
+echo "✅ Successfully imported public key to AWS EC2 as '$KEY_NAME'."
 
 # =============================
-# Read SSH Public Key
+# Read SSH Public and Private Keys
 # =============================
 SSH_PUBLIC_KEY=$(cat "$SSH_PUBLIC_KEY_FILE_EXPANDED")
+SSH_PRIVATE_KEY_FILE="${SSH_PUBLIC_KEY_FILE_EXPANDED%.pub}"
 
-if [ -z "$SSH_PUBLIC_KEY" ]; then
-    echo "❌ Error: SSH public key file is empty"
+if [ ! -f "$SSH_PRIVATE_KEY_FILE" ]; then
+    echo "❌ Error: Corresponding private key not found at: $SSH_PRIVATE_KEY_FILE"
+    exit 1
+fi
+SSH_PRIVATE_KEY=$(cat "$SSH_PRIVATE_KEY_FILE")
+
+if [ -z "$SSH_PUBLIC_KEY" ] || [ -z "$SSH_PRIVATE_KEY" ]; then
+    echo "❌ Error: SSH public or private key file is empty"
     exit 1
 fi
 
 echo "🔑 Using SSH public key from: $SSH_PUBLIC_KEY_FILE_EXPANDED"
+echo "🔐 Using corresponding private key for Git operations in container"
 echo "🚀 Deploying $PROJECT_NAME CPU Test Instance CloudFormation stack: $STACK_NAME"
 echo "🧪 Instance Type: $INSTANCE_TYPE (CPU Testing - No GPU quota needed)"
 echo "💾 Storage: ${VOLUME_SIZE}GB EBS"

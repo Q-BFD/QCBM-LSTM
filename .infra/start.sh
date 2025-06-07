@@ -1,33 +1,50 @@
 #!/bin/bash
+set -e
 
-echo "[DEBUG] Checking SSH key setup..."
-echo "[DEBUG] SSH_PUBLIC_KEY value length: ${#SSH_PUBLIC_KEY}"
+# =================
+# SSH Key Setup
+# =================
 
-# SSH 키 설정
+# 1. Setup devuser's public key for SSH access into the container
 if [ -n "${SSH_PUBLIC_KEY}" ]; then
-    echo "[DEBUG] Setting up SSH key for devuser..."
+    echo "Setting up public key for devuser..."
+    mkdir -p /home/devuser/.ssh
     echo "${SSH_PUBLIC_KEY}" > /home/devuser/.ssh/authorized_keys
+    chown -R devuser:devuser /home/devuser/.ssh
+    chmod 700 /home/devuser/.ssh
     chmod 600 /home/devuser/.ssh/authorized_keys
-    chown devuser:devuser /home/devuser/.ssh/authorized_keys
-    echo "[DEBUG] SSH key setup completed. Key content:"
-    ls -la /home/devuser/.ssh/
-    head -n 1 /home/devuser/.ssh/authorized_keys
-else
-    echo "[DEBUG] No SSH_PUBLIC_KEY provided!"
+    echo "Public key setup complete."
 fi
 
-# SSH 서버 시작
-echo "[DEBUG] Starting SSH server..."
-/usr/sbin/sshd
-echo "[DEBUG] SSH server started"
+# 2. Setup devuser's private key for SSH access from the container (e.g., git push)
+if [ -n "${SSH_PRIVATE_KEY}" ]; then
+    echo "Setting up private key for devuser..."
+    mkdir -p /home/devuser/.ssh
+    echo "${SSH_PRIVATE_KEY}" > /home/devuser/.ssh/id_ed25519
+    chown -R devuser:devuser /home/devuser/.ssh
+    chmod 700 /home/devuser/.ssh
+    chmod 600 /home/devuser/.ssh/id_ed25519
 
-# JupyterLab 시작
-echo "[DEBUG] Starting JupyterLab..."
-jupyter lab \
+    # Add github.com to known_hosts to avoid interactive prompts
+    ssh-keyscan -t rsa github.com >> /home/devuser/.ssh/known_hosts
+    chown devuser:devuser /home/devuser/.ssh/known_hosts
+    chmod 644 /home/devuser/.ssh/known_hosts
+
+    echo "Private key setup complete."
+fi
+
+# =================
+# Start Services
+# =================
+
+# Start SSH server
+echo "Starting SSH server..."
+/usr/sbin/sshd
+
+# Start JupyterLab as devuser
+echo "Starting JupyterLab..."
+su - devuser -c "jupyter lab \
     --ip=0.0.0.0 \
     --port=8888 \
     --no-browser \
-    --allow-root \
-    --NotebookApp.token="${JUPYTER_TOKEN}" \
-    --NotebookApp.password='' \
-    --notebook-dir=/workspace 
+    --notebook-dir=/workspace" 

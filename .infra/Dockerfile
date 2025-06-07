@@ -16,23 +16,19 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# SSH 설정
-RUN mkdir -p /home/devuser/.ssh && \
-    chmod 700 /home/devuser/.ssh
-
-# Git SSH 키 설정 (빌드 시에만 사용)
-COPY /tmp/ssh/id_ed25519 /home/devuser/.ssh/
-RUN chmod 600 /home/devuser/.ssh/id_ed25519 && \
-    echo "Host github.com\n\tStrictHostKeyChecking no\n" >> /home/devuser/.ssh/config && \
-    chown -R devuser:devuser /home/devuser/.ssh
+# SSH 서버 설정
+RUN mkdir /var/run/sshd && \
+    echo 'PermitRootLogin no' >> /etc/ssh/sshd_config && \
+    echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config && \
+    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config && \
+    echo 'AuthorizedKeysFile %h/.ssh/authorized_keys' >> /etc/ssh/sshd_config
 
 # 개발자 사용자 생성
 RUN useradd -m -s /bin/bash devuser && \
-    echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# Git 설정
-RUN git config --global user.email "devuser@container" && \
-    git config --global user.name "Dev User"
+    echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    mkdir -p /home/devuser/.ssh && \
+    chmod 700 /home/devuser/.ssh && \
+    chown -R devuser:devuser /home/devuser/.ssh
 
 # 작업 디렉토리 설정
 WORKDIR /workspace
@@ -49,6 +45,10 @@ RUN pip3 install --no-cache-dir -r requirements.txt \
 EXPOSE 8888 8080 22
 ENV JUPYTER_ENABLE_LAB=yes
 ENV JUPYTER_TOKEN=qcbmtoken
+
+# SSH 키 환경 변수
+ENV SSH_PUBLIC_KEY=""
+ENV SSH_PRIVATE_KEY=""
 
 # 시작 스크립트
 COPY start.sh /usr/local/bin/

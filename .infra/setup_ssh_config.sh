@@ -35,9 +35,9 @@ USER_NAME="ubuntu"                           # EC2 기본 사용자 (Ubuntu 기�
 PORT=22                                      # EC2 SSH 포트
 CONFIG_FILE="$HOME/.ssh/config"              # SSH 설정파일 경로
 
-# SSH 키 파일 설정
-EC2_KEY_NAME="${PROJECT_NAME}-dev-key"       # EC2 Key Pair 이름
-EC2_KEY_FILE="$HOME/.ssh/${EC2_KEY_NAME}.pem"  # EC2 접속용 키
+# 🔑 모든 인스턴스에 고정된 키 페어 이름을 사용
+EC2_KEY_NAME="qb-frontier-global-key"
+EC2_KEY_FILE="$HOME/.ssh/id_ed25519_github_qb_frontier"  # .pem 대신 실제 private key 사용
 
 # ⭐ 개인 SSH 키 파일 우선순위 (Container 접속용)
 # 첫 번째로 발견되는 키를 사용합니다
@@ -90,7 +90,20 @@ remove_existing_host() {
 # =============================
 # Validation
 # =============================
-echo "🔍 CloudFormation 스택에서 Elastic IP 조회 중..."
+echo "🔍 Finding primary SSH key for connections..."
+PRIMARY_SSH_KEY=$(find_personal_ssh_key)
+
+if [ -z "$PRIMARY_SSH_KEY" ]; then
+    echo "❌ ERROR: Could not find a primary SSH private key."
+    echo "   Please check if one of the following files exists:"
+    for key_file in "${PERSONAL_SSH_KEY_FILES[@]}"; do
+        echo "   - $key_file"
+    done
+    exit 1
+fi
+echo "✅ Using primary SSH key for all connections: $PRIMARY_SSH_KEY"
+
+echo "🔍 Looking up Elastic IP from CloudFormation stack..."
 
 # Get Elastic IP from CloudFormation
 EIP=$(aws cloudformation describe-stacks \
@@ -108,35 +121,6 @@ fi
 
 echo "✅ Elastic IP 발견: $EIP"
 
-# Find EC2 Key Pair
-echo "🔍 EC2 Key Pair 파일 확인 중..."
-if [ ! -f "$EC2_KEY_FILE" ]; then
-    echo "❌ ERROR: EC2 Key Pair 파일을 찾을 수 없습니다: $EC2_KEY_FILE"
-    echo "   다음 명령으로 Key Pair를 생성하세요:"
-    echo "   aws ec2 create-key-pair --key-name $EC2_KEY_NAME --query 'KeyMaterial' --output text > $EC2_KEY_FILE"
-    echo "   chmod 600 $EC2_KEY_FILE"
-    exit 1
-fi
-echo "✅ EC2 Key Pair 발견: $EC2_KEY_FILE"
-
-# Find personal SSH private key for Docker container
-echo "🔍 개인 SSH 키 파일 검색 중..."
-PERSONAL_SSH_KEY=$(find_personal_ssh_key)
-
-if [ -z "$PERSONAL_SSH_KEY" ]; then
-    echo "❌ ERROR: 개인 SSH 키 파일을 찾을 수 없습니다."
-    echo "   다음 위치를 확인하세요:"
-    for key_file in "${PERSONAL_SSH_KEY_FILES[@]}"; do
-        echo "   - $key_file"
-    done
-    echo ""
-    echo "   SSH 키가 없다면 다음 명령으로 생성하세요:"
-    echo "   ssh-keygen -t ed25519 -C 'your_email@example.com'"
-    exit 1
-fi
-
-echo "✅ 개인 SSH 키 발견: $PERSONAL_SSH_KEY"
-
 # =============================
 # SSH Config Setup
 # =============================
@@ -149,15 +133,14 @@ mkdir -p "$(dirname "$CONFIG_FILE")"
 remove_existing_host "$ALIAS_NAME" "$CONFIG_FILE"
 remove_existing_host "${ALIAS_NAME}-container" "$CONFIG_FILE"
 
-# Add new SSH config entry
-cat <<EOF >> "$CONFIG_FILE"
-
+# Prepare the new configuration block
+NEW_CONFIG=$(cat <<EOF
 # ${PROJECT_NAME} Development Environment - EC2 Instance
 Host ${ALIAS_NAME}
     HostName ${EIP}
     User ${USER_NAME}
     Port ${PORT}
-    IdentityFile ${EC2_KEY_FILE}
+    IdentityFile ${PRIMARY_SSH_KEY}
     IdentitiesOnly yes
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
@@ -168,17 +151,21 @@ Host ${ALIAS_NAME}-container
     HostName ${EIP}
     User devuser
     Port 2222
-    IdentityFile ${PERSONAL_SSH_KEY}
+    IdentityFile ${PRIMARY_SSH_KEY}
     IdentitiesOnly yes
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LogLevel ERROR
+
 EOF
+)
+
+# Prepend the new configuration to the file
+echo "${NEW_CONFIG}" | cat - "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
 
 # Set proper permissions
 chmod 600 "$CONFIG_FILE"
-chmod 600 "$EC2_KEY_FILE" 2>/dev/null || true
-chmod 600 "$PERSONAL_SSH_KEY" 2>/dev/null || true
+chmod 600 "$PRIMARY_SSH_KEY" 2>/dev/null || true
 
 echo ""
 echo "🎉 SSH config 설정 완료!"
@@ -190,8 +177,7 @@ echo ""
 echo "🔗 추가 정보:"
 echo "   📱 VSCode Web:        http://${EIP}:8080"
 echo "   🔧 SSH Config:        ${CONFIG_FILE}"
-echo "   🔑 EC2 Key:           ${EC2_KEY_FILE}"
-echo "   🔑 Personal Key:      ${PERSONAL_SSH_KEY}"
+echo "   🔑 Primary SSH Key:   ${PRIMARY_SSH_KEY}"
 
 # =============================
 # Connection Test
