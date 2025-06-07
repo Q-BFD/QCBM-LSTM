@@ -25,18 +25,15 @@ GIT_BRANCH="${GIT_BRANCH:-automation}"
 
 # Enhanced logging function
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/$
-    {PROJECT_NAME}-setup.log
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/${PROJECT_NAME}-setup.log
 }
 
 error_log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a /var/
-    log/${PROJECT_NAME}-setup.log
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a /var/log/${PROJECT_NAME}-setup.log
 }
 
 success_log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a /var/
-    log/${PROJECT_NAME}-setup.log
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a /var/log/${PROJECT_NAME}-setup.log
 }
 
 log "==== setup_full.sh 시작 ===="
