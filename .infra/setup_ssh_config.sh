@@ -35,12 +35,8 @@ USER_NAME="ubuntu"                           # EC2 기본 사용자 (Ubuntu 기�
 PORT=22                                      # EC2 SSH 포트
 CONFIG_FILE="$HOME/.ssh/config"              # SSH 설정파일 경로
 
-# 🔑 모든 인스턴스에 고정된 키 페어 이름을 사용
-EC2_KEY_NAME="qb-frontier-global-key"
-EC2_KEY_FILE="$HOME/.ssh/id_ed25519_github_qb_frontier"  # .pem 대신 실제 private key 사용
-
-# ⭐ 개인 SSH 키 파일 우선순위 (Container 접속용)
-# 첫 번째로 발견되는 키를 사용합니다
+# ⭐ 사용할 개인 SSH 키 파일 우선순위
+# 첫 번째로 발견되는 키를 EC2 및 컨테이너 접속에 모두 사용합니다.
 PERSONAL_SSH_KEY_FILES=(
     "$HOME/.ssh/id_ed25519_github_qb_frontier"  # 🔑 주 개발 키 (최우선)
     "$HOME/.ssh/id_ed25519"                      # 🔑 기본 ed25519 키

@@ -10,9 +10,6 @@ Parameters:
     Description: Project name for resource naming (e.g., qcbm, myproject)
     AllowedPattern: ^[a-z][a-z0-9-]*[a-z0-9]$
     ConstraintDescription: Must start with lowercase letter, contain only lowercase letters, numbers, and hyphens
-  KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: Name of an existing EC2 KeyPair
   InstanceType:
     Type: String
     Default: t3.large
@@ -102,7 +99,6 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
       ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul)
       AvailabilityZone: !Select [0, !GetAZs '']
       SecurityGroupIds:
@@ -123,17 +119,18 @@ Resources:
           #!/bin/bash
           set -e
 
-          # Validate required parameters
-          if [ -z "${SetupScriptOrg}" ] || [ -z "${SetupScriptRepo}" ] || [ -z "${SetupScriptBranch}" ] || [ -z "${SetupScriptPath}" ]; then
-            echo "ERROR: All setup script parameters (organization, repository, branch, path) are required"
-            exit 1
-          fi
+          # Manually inject the public key for initial SSH access
+          mkdir -p /home/ubuntu/.ssh
+          echo '${SSHPublicKey}' >> /home/ubuntu/.ssh/authorized_keys
+          chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+          chmod 700 /home/ubuntu/.ssh
+          chmod 600 /home/ubuntu/.ssh/authorized_keys
+          echo "Public key for EC2 access has been injected."
 
-          # Export SSH keys for setup script
-          export SSHPublicKey='${SSHPublicKey}'
+          # Export the private key for the setup script to use
           export SSHPrivateKey='${SSHPrivateKey}'
 
-          # Construct setup script URL from parameters
+          # Construct and run the main setup script
           SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
           echo "Downloading setup script from: $SETUP_SCRIPT_URL"
 

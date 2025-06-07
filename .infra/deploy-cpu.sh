@@ -61,45 +61,16 @@ echo "📚 Stack Name: $STACK_NAME"
 # Validation
 # =============================
 SSH_PUBLIC_KEY_FILE_EXPANDED="${SSH_PUBLIC_KEY_FILE/#\~/$HOME}"
-
-if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
-    echo "❌ Error: SSH public key file not found at: $SSH_PUBLIC_KEY_FILE_EXPANDED"
-    echo "Please check the SSH_PUBLIC_KEY_FILE variable or generate SSH key with:"
-    echo "  ssh-keygen -t rsa -b 4096 -C 'your_email@example.com'"
-    exit 1
-fi
-
-# =============================
-# AWS EC2 Key Pair Management
-# =============================
-echo "🔍 Using global key '$KEY_NAME' for all instances."
-SSH_PUBLIC_KEY_FILE_EXPANDED="${SSH_PUBLIC_KEY_FILE/#\~/$HOME}"
-
 if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
     echo "❌ Error: SSH public key file not found at: $SSH_PUBLIC_KEY_FILE_EXPANDED"
     exit 1
 fi
-
-# AWS에 최신 로컬 공개 키를 등록합니다.
-echo "   Ensuring AWS Key Pair '$KEY_NAME' is up-to-date with local key..."
-if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
-    aws ec2 delete-key-pair --key-name "$KEY_NAME"
-fi
-
-# 공개 키에서 주석을 제거하고 AWS로 가져옵니다.
-KEY_MATERIAL=$(awk '{print $1" "$2}' "$SSH_PUBLIC_KEY_FILE_EXPANDED")
-aws ec2 import-key-pair --key-name "$KEY_NAME" --public-key-material "$KEY_MATERIAL"
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to import SSH public key to AWS EC2."
-    echo "   Please check the key format and AWS permissions."
-    exit 1
-fi
-echo "✅ Successfully imported public key to AWS EC2 as '$KEY_NAME'."
 
 # =============================
 # Read SSH Public and Private Keys
 # =============================
-SSH_PUBLIC_KEY=$(cat "$SSH_PUBLIC_KEY_FILE_EXPANDED")
+# 공개 키에서 주석을 제거하여 전달합니다.
+SSH_PUBLIC_KEY=$(awk '{print $1" "$2}' "$SSH_PUBLIC_KEY_FILE_EXPANDED")
 SSH_PRIVATE_KEY_FILE="${SSH_PUBLIC_KEY_FILE_EXPANDED%.pub}"
 
 if [ ! -f "$SSH_PRIVATE_KEY_FILE" ]; then
@@ -132,7 +103,6 @@ aws cloudformation deploy \
   --stack-name "$STACK_NAME" \
   --parameter-overrides \
     ProjectName="$PROJECT_NAME" \
-    KeyName="$KEY_NAME" \
     SSHPublicKey="$SSH_PUBLIC_KEY" \
     SSHPrivateKey="$SSH_PRIVATE_KEY" \
     InstanceType="$INSTANCE_TYPE" \
