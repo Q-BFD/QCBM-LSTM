@@ -20,8 +20,6 @@ VOLUME_SIZE="${VOLUME_SIZE:-50}"
 GIT_REPO="${GIT_REPO:-https://github.com/Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
 
-echo "==== setup_full.sh 시작 ====" | tee -a /var/log/${PROJECT_NAME}-setup.log
-
 # Remove strict error handling to prevent early exit
 # set -e  # Commented out to continue on errors
 
@@ -41,10 +39,11 @@ success_log() {
     log/${PROJECT_NAME}-setup.log
 }
 
+log "==== setup_full.sh 시작 ===="
 log "🚀 Starting ${PROJECT_NAME} development environment setup..."
-log "🧪 Instance Type: ${InstanceType} (CPU Testing)"
-log "📂 Git Repository: ${GitRepository}"
-log "🌿 Git Branch: ${GitBranch}"
+log "🧪 Instance Type: ${INSTANCE_TYPE} (CPU Testing)"
+log "📂 Git Repository: ${GIT_REPO}"
+log "🌿 Git Branch: ${GIT_BRANCH}"
 
 # Check initial disk space
 log "💾 Checking initial disk space..."
@@ -112,7 +111,7 @@ is_mounted() {
 EBS_DEVICE=""
 EBS_SUCCESS=false
 
-log "🔍 Strategy 1: Looking for NVMe devices around ${VolumeSize}
+log "🔍 Strategy 1: Looking for NVMe devices around ${VOLUME_SIZE}
 GB..."
 
 for attempt in {1..60}; do
@@ -153,7 +152,7 @@ for attempt in {1..60}; do
     
     # Strategy 2: Look for any unmounted device around target size
     if [ -z "$EBS_DEVICE" ]; then
-        log "🔍 Strategy 2: Looking for any unmounted ${VolumeSize}
+        log "🔍 Strategy 2: Looking for any unmounted ${VOLUME_SIZE}
         GB device..."
         while IFS= read -r line; do
             device_name=$(echo "$line" | awk '{print $1}')
@@ -190,7 +189,7 @@ for attempt in {1..60}; do
             aws ec2 describe-volumes \
                 --filters "Name=attachment.instance-id,
                 Values=$INSTANCE_ID" \
-                --query 'Volumes[?Size==`'"${VolumeSize}"'`].
+                --query 'Volumes[?Size==`'"${VOLUME_SIZE}"'`].
                 Attachments[0].Device' \
                 --output text 2>/dev/null | while read device; do
                     if [ "$device" != "None" ] && [ ! -z 
@@ -305,15 +304,15 @@ fi
 
 if [ "$MOUNT_OK" = true ]; then
     # Clone repository
-    log "📁 Cloning repository from ${GitRepository} (branch: ${GitBranch})..."
+    log "📁 Cloning repository from ${GIT_REPO} (branch: ${GIT_BRANCH})..."
     cd /mnt/data
 
     # Extract repository name from URL
-    REPO_NAME=$(basename "${GitRepository}" .git)
+    REPO_NAME=$(basename "${GIT_REPO}" .git)
     log "📂 Repository name: $REPO_NAME"
 
     if [ ! -d "$REPO_NAME" ]; then
-        if git clone -b ${GitBranch} ${GitRepository}; then
+        if git clone -b ${GIT_BRANCH} ${GIT_REPO}; then
             success_log "Repository cloned successfully"
             chown -R ubuntu:ubuntu "$REPO_NAME"
         else
