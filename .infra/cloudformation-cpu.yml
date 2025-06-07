@@ -71,18 +71,6 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
 
-  ProjectVolume:
-    Type: AWS::EC2::Volume
-    Properties:
-      AvailabilityZone: !Select [0, !GetAZs '']
-      Size: !Ref VolumeSize
-      VolumeType: gp3
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-DataVolume-CPU'
-        - Key: Project
-          Value: !Ref ProjectName
-
   ProjectInstance:
     Type: AWS::EC2::Instance
     Properties:
@@ -92,6 +80,12 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs '']
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sdf
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSize
+            DeleteOnTermination: false
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-DevInstance-CPU'
@@ -387,7 +381,7 @@ Resources:
           docker system prune -f 2>/dev/null || true
 
           # Check available space before installing
-          AVAILABLE_SPACE_BEFORE=$$(df / | awk 'NR==2 {print $$4}')
+          AVAILABLE_SPACE_BEFORE=$(df / | awk 'NR==2 {print $$4}')
           log "Available disk space before Python packages: $$AVAILABLE_SPACE_BEFORE KB"
 
           # Install core Python packages step by step
@@ -399,7 +393,7 @@ Resources:
           pip3 install --no-cache-dir "numpy>=1.24.0" && success_log "numpy installed" || error_log "numpy failed"
 
           # Check space after numpy
-          SPACE_CHECK=$$(df / | awk 'NR==2 {print $$4}')
+          SPACE_CHECK=$(df / | awk 'NR==2 {print $$4}')
           if [ "$$SPACE_CHECK" -lt 1000000 ]; then
               log "Low disk space detected, cleaning up..."
               apt autoremove -y && apt autoclean
@@ -458,7 +452,7 @@ Resources:
               # Pre-build cleanup and space check
               log "Preparing for Docker build..."
               docker system prune -f
-              DOCKER_SPACE=$$(df / | awk 'NR==2 {print $$4}')
+              DOCKER_SPACE=$(df / | awk 'NR==2 {print $$4}')
               log "Available space for Docker build: $$DOCKER_SPACE KB"
               
               if [ "$$DOCKER_SPACE" -gt 2000000 ]; then
@@ -519,12 +513,12 @@ Resources:
 
           success_log "Setup script completed successfully!"
 
-  VolumeAttachment:
-    Type: AWS::EC2::VolumeAttachment
-    Properties:
-      InstanceId: !Ref ProjectInstance
-      VolumeId: !Ref ProjectVolume
-      Device: /dev/xvdf
+  #  BlockDeviceMappings:
+  #    - DeviceName: /dev/xvdf # t3 / Nitro 계열 → /dev/nvme1n1
+  #      Ebs:
+  #        VolumeType: gp3
+  #        VolumeSize: !Ref VolumeSize
+  #        DeleteOnTermination: false
 
   ProjectElasticIP:
     Type: AWS::EC2::EIP

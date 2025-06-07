@@ -59,7 +59,7 @@ aws cloudformation deploy \
 ```bash
 # 프로젝트 루트에서 실행
 DOCKER_BUILDKIT=1 docker build -f .infra/Dockerfile -t qcbm-dev-test .
-````
+```
 
 ## 🔗 추가 학습 자료 (원래 README 개발자 참고)
 
@@ -68,10 +68,10 @@ DOCKER_BUILDKIT=1 docker build -f .infra/Dockerfile -t qcbm-dev-test .
   - KeyPair 목록 : `aws ec2 describe-key-pairs --output table`
   - S3 폴더 동기 : `aws s3 sync ./data s3://my-bucket/data`
 - **CloudFormation 디버깅 팁**
-  - 생성 실패 리소스만 보기  
+  - 생성 실패 리소스만 보기
      `aws cloudformation describe-stack-events --stack-name $STACK \
 --query 'StackEvents[?ResourceStatus==\`CREATE_FAILED\`].[LogicalResourceId,ResourceStatusReason]' --output table`
-  - 템플릿 내부 변수 레퍼런스 검사 (bash → CF 충돌)  
+  - 템플릿 내부 변수 레퍼런스 검사 (bash → CF 충돌)
     `grep -n "\$[A-Z_][A-Z0-9_]*" cloudformation-cpu.yml | grep -v "\$\$"`
 - **EC2 상태 확인 원라이너**
   ```bash
@@ -79,3 +79,43 @@ DOCKER_BUILDKIT=1 docker build -f .infra/Dockerfile -t qcbm-dev-test .
   ```
 
 문의: 슬랙 #infra 또는 GitHub Issues.
+
+## 📦 데이터 볼륨(50GB) 보존 전략
+AWS Nitro 계열(t3, g4dn 등)에서는 `BlockDeviceMappings`로 **데이터 볼륨**을 직접 매핑하고
+`DeleteOnTermination: false` 옵션을 주어 인스턴스가 사라져도 데이터를 보존합니다.
+
+### CloudFormation 예시
+```yaml
+BlockDeviceMappings:
+  - DeviceName: /dev/xvdf           # 부팅 시 → /dev/nvme1n1 로 보임
+    Ebs:
+      VolumeType: gp3
+      VolumeSize: !Ref VolumeSize   # 기본 50 GiB
+      DeleteOnTermination: false    # 인스턴스 Terminate 되어도 볼륨 유지
+```
+
+### 인스턴스 종료 후 데이터 살리기
+1. **볼륨 ID 찾기**
+   ```bash
+   aws ec2 describe-volumes \
+     --filters "Name=tag:Project,Values=test" \
+     --query 'Volumes[0].VolumeId' --output text
+   # → vol-0123456789abcdef0
+   ```
+2. **새 인스턴스에 붙이기**
+   ```bash
+   aws ec2 attach-volume \
+     --volume-id vol-0123456789abcdef0 \
+     --instance-id i-0abc... \
+     --device /dev/xvdf
+   ```
+3. **마운트**
+   ```bash
+   ssh ubuntu@NEW_IP
+   sudo mkdir -p /mnt/data
+   sudo mount /dev/nvme1n1 /mnt/data
+   df -h /mnt/data
+   ```
+
+> 루트 EBS는 기본적으로 `DeleteOnTermination: true`라 삭제됩니다. 필요하면 동일 옵션을 false 로 바꿔 전체 상태 스냅샷을 보존할 수 있습니다.
+````
