@@ -17,10 +17,12 @@ fi
 
 # Show usage if help requested
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 [PROJECT_NAME]"
+    echo "📋 Usage: $0 [PROJECT_NAME] [INSTANCE_TYPE]"
     echo ""
     echo "Examples:"
-    echo "   $0 qcbm          # Deploy QCBM project"
+    echo "   $0 qcbm                 # 기본 t3.large"
+    echo "   $0 qcbm t3.xlarge       # 4 vCPU 16GB"
+    echo "   $0 myproj c5.xlarge     # CPU 최적화"
     echo "   $0 myproject     # Deploy custom project"
     echo "   $0               # Deploy with default name 'qcbm'"
     echo ""
@@ -36,14 +38,19 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     exit 0
 fi
 
-PROJECT_NAME="${1:-qcbm}"
+# Parse arguments
+PROJECT_NAME="$1"
+INSTANCE_TYPE="${2:-t3.large}"
+if [ -z "$PROJECT_NAME" ]; then
+  echo "❌ Project name required. Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"; exit 1; fi
+
 echo "🎯 Project: $PROJECT_NAME"
 echo "📁 Infrastructure files: ./.infra/"
 echo ""
 
 # Call the actual deployment script
 echo "🚀 Starting deployment..."
-cd .infra && ./deploy-cpu.sh "$PROJECT_NAME"
+cd .infra && ./deploy-cpu.sh "$PROJECT_NAME" "$INSTANCE_TYPE"
 
 # Check deployment result
 if [ $? -eq 0 ]; then

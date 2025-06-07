@@ -5,11 +5,13 @@
 # =============================
 
 # Project name from argument or default
-PROJECT_NAME="${1:-qcbm}"  # First argument or default to 'qcbm'
+PROJECT_NAME="$1"
+INSTANCE_TYPE="${2:-t3.large}"
+[ -z "$PROJECT_NAME" ] && { echo "Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"; exit 1; }
+
 STACK_NAME="${PROJECT_NAME}-dev-cpu"
 KEY_NAME="${PROJECT_NAME}-dev-key"  # AWS EC2 Key Pair name
 SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"  # Path to your SSH public key file
-INSTANCE_TYPE="t3.large"  # CPU instance for testing (no GPU quota needed)
 VOLUME_SIZE="50"  # Smaller storage for testing
 
 # Git repository configuration
@@ -20,7 +22,7 @@ GIT_BRANCH="automation"
 # Usage Information
 # =============================
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 [PROJECT_NAME]"
+    echo "📋 Usage: $0 [PROJECT_NAME] [INSTANCE_TYPE]"
     echo ""
     echo "Examples:"
     echo "   $0 qcbm          # Deploy with project name 'qcbm'"

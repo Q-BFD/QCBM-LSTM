@@ -155,7 +155,19 @@ Resources:
           df -h | tee -a /var/log/${ProjectName}-setup.log
 
           # Configure Docker
-          log "🐳 Configuring Docker..."
+          log "🐳 Configuring Docker (data-root=/mnt/data/docker)..."
+
+          # Move Docker storage to large EBS volume
+          mkdir -p /mnt/data/docker
+          cat > /etc/docker/daemon.json <<'DOCKERCFG'
+{
+  "data-root": "/mnt/data/docker",
+  "log-driver": "json-file",
+  "log-opts": {"max-size": "100m"}
+}
+DOCKERCFG
+
+          systemctl daemon-reload
           if systemctl enable docker && systemctl start docker; then
               success_log "Docker configured successfully"
               usermod -aG docker ubuntu
