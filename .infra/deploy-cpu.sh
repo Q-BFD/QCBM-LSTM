@@ -78,23 +78,40 @@ SSH_PRIVATE_KEY=$(cat "$SSH_PRIVATE_KEY_FILE_EXPANDED")
 # =============================
 # AWS EC2 Key Pair Management
 # =============================
-echo "🔍 Checking AWS EC2 Key Pair: $KEY_NAME"
+echo "🔑 Checking AWS EC2 Key Pair: $KEY_NAME"
 
-if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
-    echo "✅ Key Pair '$KEY_NAME' already exists"
+# 로컬에 키 파일이 있는지 확인
+KEY_FILE="$HOME/.ssh/${KEY_NAME}.pem"
+if [ -f "$KEY_FILE" ]; then
+    echo "✅ Key Pair file exists locally: $KEY_FILE"
 else
-    echo "⚠️  Key Pair '$KEY_NAME' not found. Creating new one..."
+    echo "⚠️ Key Pair file not found locally. Checking AWS..."
     
-    KEY_FILE="$HOME/.ssh/${KEY_NAME}.pem"
-    
-    if aws ec2 create-key-pair --key-name "$KEY_NAME" --query 'KeyMaterial' --output text > "$KEY_FILE"; then
-        chmod 600 "$KEY_FILE"
-        echo "✅ Key Pair created successfully: $KEY_FILE"
-        echo "   (This file is needed for direct EC2 access)"
-    else
-        echo "❌ Failed to create Key Pair"
+    # AWS에 키 페어가 존재하는지 확인
+    if aws ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
+        echo "❌ Error: Key Pair exists in AWS but local file is missing"
+        echo "Please delete the key pair from AWS and try again:"
+        echo "aws ec2 delete-key-pair --key-name $KEY_NAME"
         exit 1
+    else
+        echo "🔑 Creating new Key Pair: $KEY_NAME"
+        # 키 페어 생성 및 저장
+        if aws ec2 create-key-pair --key-name "$KEY_NAME" --query 'KeyMaterial' --output text > "$KEY_FILE"; then
+            chmod 600 "$KEY_FILE"
+            echo "✅ Key Pair created successfully: $KEY_FILE"
+        else
+            echo "❌ Failed to create Key Pair"
+            rm -f "$KEY_FILE"  # 실패한 경우 불완전한 파일 제거
+            exit 1
+        fi
     fi
+fi
+
+# 키 파일 권한 확인
+KEY_PERMS=$(stat -f "%Lp" "$KEY_FILE")
+if [ "$KEY_PERMS" != "600" ]; then
+    echo "⚠️ Fixing Key Pair file permissions..."
+    chmod 600 "$KEY_FILE"
 fi
 
 # =============================
