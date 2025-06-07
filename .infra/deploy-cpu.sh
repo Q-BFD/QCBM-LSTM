@@ -18,6 +18,23 @@ VOLUME_SIZE="50"  # Smaller storage for testing
 GIT_REPOSITORY="https://github.com/Q-BFD/QCBM-LSTM.git"
 GIT_BRANCH="automation"
 
+# Parse setup script information from Git repository
+SETUP_SCRIPT_PATH=".infra/setup_full.sh"
+
+# Parse organization and repository from Git URL
+if [[ $GIT_REPOSITORY =~ github\.com[/:]([^/]+)/([^/]+)\.git ]]; then
+    SETUP_SCRIPT_ORG="${BASH_REMATCH[1]}"
+    SETUP_SCRIPT_REPO="${BASH_REMATCH[2]}"
+    SETUP_SCRIPT_BRANCH="$GIT_BRANCH"
+    echo "📦 Parsed Git info:"
+    echo "   - Organization: $SETUP_SCRIPT_ORG"
+    echo "   - Repository: $SETUP_SCRIPT_REPO"
+    echo "   - Branch: $SETUP_SCRIPT_BRANCH"
+else
+    echo "❌ Error: Could not parse GitHub organization and repository from URL: $GIT_REPOSITORY"
+    exit 1
+fi
+
 # =============================
 # Usage Information
 # =============================
@@ -107,6 +124,10 @@ aws cloudformation deploy \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
     GitBranch="$GIT_BRANCH" \
+    SetupScriptOrg="$SETUP_SCRIPT_ORG" \
+    SetupScriptRepo="$SETUP_SCRIPT_REPO" \
+    SetupScriptBranch="$SETUP_SCRIPT_BRANCH" \
+    SetupScriptPath="$SETUP_SCRIPT_PATH" \
   --capabilities CAPABILITY_NAMED_IAM
 
 # =============================

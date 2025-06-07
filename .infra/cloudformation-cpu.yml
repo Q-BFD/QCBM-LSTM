@@ -42,6 +42,27 @@ Parameters:
   GitBranch:
     Type: String
     Description: Git branch to checkout
+  SetupScriptOrg:
+    Type: String
+    Description: GitHub organization containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script organization name is required
+  SetupScriptRepo:
+    Type: String
+    Description: GitHub repository containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script repository name is required
+  SetupScriptBranch:
+    Type: String
+    Description: Branch containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script branch name is required
+  SetupScriptPath:
+    Type: String
+    Description: Path to the setup script in the repository
+    MinLength: 1
+    AllowedPattern: ^[a-zA-Z0-9/_.-]+$
+    ConstraintDescription: Setup script path must be a valid file path and is required
 
 Resources:
   ProjectSecurityGroup:
@@ -95,7 +116,31 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -e
-          curl -fsSL https://raw.githubusercontent.com/Q-BFD/QCBM-LSTM/automation/.infra/setup_full.sh -o /tmp/setup.sh
+
+          # Validate required parameters
+          if [ -z "${SetupScriptOrg}" ] || [ -z "${SetupScriptRepo}" ] || [ -z "${SetupScriptBranch}" ] || [ -z "${SetupScriptPath}" ]; then
+            echo "ERROR: All setup script parameters (organization, repository, branch, path) are required"
+            exit 1
+          fi
+
+          # Export SSH key for setup script
+          export SSHPublicKey='${SSHPublicKey}'
+
+          # Construct setup script URL from parameters
+          SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
+          echo "Downloading setup script from: $SETUP_SCRIPT_URL"
+
+          # Download and verify setup script
+          if ! curl -fsSL "$SETUP_SCRIPT_URL" -o /tmp/setup.sh; then
+            echo "ERROR: Failed to download setup script from $SETUP_SCRIPT_URL"
+            exit 1
+          fi
+
+          if [ ! -s /tmp/setup.sh ]; then
+            echo "ERROR: Downloaded setup script is empty"
+            exit 1
+          fi
+
           chmod +x /tmp/setup.sh
           /tmp/setup.sh \
             --project ${ProjectName} \
