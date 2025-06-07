@@ -1,0 +1,572 @@
+# =============================
+# Generic Dev Environment - CPU Instance Template
+# =============================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Generic Dev Environment - CPU Instance with Docker + EBS (Reusable Template)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name for resource naming (e.g., qcbm, myproject)
+    AllowedPattern: ^[a-z][a-z0-9-]*[a-z0-9]$
+    ConstraintDescription: Must start with lowercase letter, contain only lowercase letters, numbers, and hyphens
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair
+  InstanceType:
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - c5.large
+      - c5.xlarge
+    Description: CPU instance type for testing (no GPU quota required)
+  VolumeSize:
+    Type: Number
+    Default: 50
+    Description: Size of the EBS volume in GiB
+  SSHPublicKey:
+    Type: String
+    Description: SSH public key to be added to authorized_keys
+    AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
+    ConstraintDescription: Must be a valid SSH public key
+  GitRepository:
+    Type: String
+    Description: Git repository URL to clone
+  GitBranch:
+    Type: String
+    Description: Git branch to checkout
+
+Resources:
+  ProjectSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Allow SSH, VSCode, Docker SSH, and Jupyter for ${ProjectName}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-SecurityGroup'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ProjectVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Size: !Ref VolumeSize
+      VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-DataVolume-CPU'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ProjectInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul)
+      AvailabilityZone: !Select [0, !GetAZs '']
+      SecurityGroupIds:
+        - !Ref ProjectSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-DevInstance-CPU'
+        - Key: Project
+          Value: !Ref ProjectName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Remove strict error handling to prevent early exit
+          # set -e  # Commented out to continue on errors
+
+          # Enhanced logging function
+          log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/${ProjectName}-setup.log
+          }
+
+          error_log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a /var/log/${ProjectName}-setup.log
+          }
+
+          success_log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a /var/log/${ProjectName}-setup.log
+          }
+
+          log "🚀 Starting ${ProjectName} development environment setup..."
+          log "🧪 Instance Type: ${InstanceType} (CPU Testing)"
+          log "📂 Git Repository: ${GitRepository}"
+          log "🌿 Git Branch: ${GitBranch}"
+
+          # Check initial disk space
+          log "💾 Checking initial disk space..."
+          df -h | tee -a /var/log/${ProjectName}-setup.log
+
+          # Update system with retry logic
+          log "📦 Updating system packages..."
+          for i in {1..3}; do
+              if apt update; then
+                  success_log "System packages updated successfully"
+                  break
+              else
+                  error_log "Failed to update packages (attempt $$i/3)"
+                  sleep 10
+              fi
+          done
+
+          # Install packages one by one with error handling
+          log "📦 Installing basic packages..."
+
+          # Install packages individually (safer approach)
+          log "Installing git..."
+          apt install -y git && success_log "git installed successfully" || error_log "Failed to install git"
+
+          log "Installing docker.io..."
+          apt install -y docker.io && success_log "docker.io installed successfully" || error_log "Failed to install docker.io"
+
+          log "Installing python3-pip..."
+          apt install -y python3-pip && success_log "python3-pip installed successfully" || error_log "Failed to install python3-pip"
+
+          log "Installing awscli..."
+          apt install -y awscli && success_log "awscli installed successfully" || error_log "Failed to install awscli"
+
+          log "Installing basic tools..."
+          apt install -y curl wget unzip nodejs openssh-server jq htop vim nano && success_log "Basic tools installed" || error_log "Some basic tools failed"
+
+          # Check disk space after package installation
+          log "💾 Checking disk space after package installation..."
+          df -h | tee -a /var/log/${ProjectName}-setup.log
+
+          # Configure Docker
+          log "🐳 Configuring Docker..."
+          if systemctl enable docker && systemctl start docker; then
+              success_log "Docker configured successfully"
+              usermod -aG docker ubuntu
+          else
+              error_log "Failed to configure Docker"
+          fi
+
+          # =============================
+          # ENHANCED EBS VOLUME DETECTION AND MOUNTING
+          # =============================
+          log "💾 Starting enhanced EBS volume detection..."
+
+          # Function to get all block devices with details
+          get_block_devices() {
+              lsblk -J -o NAME,SIZE,MOUNTPOINT,TYPE | jq -r '.blockdevices[] | "\(.name) \(.size) \(.mountpoint // "none") \(.type)"'
+          }
+
+          # Function to check if device is already mounted
+          is_mounted() {
+              local device="$1"
+              mount | grep -q "^$device"
+          }
+
+          # Enhanced EBS volume detection with multiple strategies
+          EBS_DEVICE=""
+          EBS_SUCCESS=false
+
+          log "🔍 Strategy 1: Looking for NVMe devices around ${VolumeSize}GB..."
+
+          for attempt in {1..60}; do
+              log "⏳ Attempt $attempt/60: Scanning for EBS volume..."
+              
+              # Show current block devices for debugging
+              log "📊 Current block devices:"
+              lsblk | tee -a /var/log/${ProjectName}-setup.log
+              
+              # Strategy 1: Look for NVMe devices with size around 50GB
+              for nvme_device in /dev/nvme*n1; do
+                  if [ -e "$nvme_device" ]; then
+                      DEVICE_SIZE=$(lsblk -b -n -o SIZE "$nvme_device" 2>/dev/null | head -1)
+                      if [ ! -z "$DEVICE_SIZE" ]; then
+                          # Convert to GB (approximately)
+                          SIZE_GB=$((DEVICE_SIZE / 1024 / 1024 / 1024))
+                          log "🔍 Found NVMe device $nvme_device with size: ${SIZE_GB}GB"
+                          
+                          # Check if size is around our target (48-52GB range for 50GB volume)
+                          if [ "$SIZE_GB" -ge 48 ] && [ "$SIZE_GB" -le 52 ] && ! is_mounted "$nvme_device"; then
+                              # Double check this is not the root device
+                              if ! lsblk "$nvme_device" | grep -q "/"; then
+                                  EBS_DEVICE="$nvme_device"
+                                  success_log "Found EBS volume: $EBS_DEVICE (${SIZE_GB}GB)"
+                                  EBS_SUCCESS=true
+                                  break 2
+                              fi
+                          fi
+                      fi
+                  fi
+              done
+              
+              # Strategy 2: Look for any unmounted device around target size
+              if [ -z "$EBS_DEVICE" ]; then
+                  log "🔍 Strategy 2: Looking for any unmounted ${VolumeSize}GB device..."
+                  while IFS= read -r line; do
+                      device_name=$(echo "$line" | awk '{print $1}')
+                      device_size=$(echo "$line" | awk '{print $2}')
+                      mount_point=$(echo "$line" | awk '{print $3}')
+                      device_type=$(echo "$line" | awk '{print $4}')
+                      
+                      if [ "$device_type" = "disk" ] && [ "$mount_point" = "none" ]; then
+                          # Check if size contains our target
+                          if echo "$device_size" | grep -E "(4[89]|5[0-2])(\.|G|$)"; then
+                              full_device="/dev/$device_name"
+                              if [ -e "$full_device" ] && ! is_mounted "$full_device"; then
+                                  EBS_DEVICE="$full_device"
+                                  success_log "Found EBS volume via strategy 2: $EBS_DEVICE ($device_size)"
+                                  EBS_SUCCESS=true
+                                  break 2
+                              fi
+                          fi
+                      fi
+                  done < <(get_block_devices)
+              fi
+              
+              # Strategy 3: AWS CLI approach (if available)
+              if [ -z "$EBS_DEVICE" ] && command -v aws >/dev/null 2>&1; then
+                  log "🔍 Strategy 3: Using AWS CLI to find attached volumes..."
+                  INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+                  if [ ! -z "$INSTANCE_ID" ]; then
+                      aws ec2 describe-volumes \
+                          --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+                          --query 'Volumes[?Size==`'"${VolumeSize}"'`].Attachments[0].Device' \
+                          --output text 2>/dev/null | while read device; do
+                              if [ "$device" != "None" ] && [ ! -z "$device" ]; then
+                                  # Convert CloudFormation device name to actual device
+                                  actual_device=$(echo "$device" | sed 's/xvd/nvme/; s/f$/1n1/')
+                                  if [ -e "$actual_device" ] && ! is_mounted "$actual_device"; then
+                                      echo "$actual_device" > /tmp/ebs_device
+                                      break
+                                  fi
+                              fi
+                          done
+                      
+                      if [ -f /tmp/ebs_device ]; then
+                          EBS_DEVICE=$(cat /tmp/ebs_device)
+                          rm -f /tmp/ebs_device
+                          if [ ! -z "$EBS_DEVICE" ]; then
+                              success_log "Found EBS volume via AWS CLI: $EBS_DEVICE"
+                              EBS_SUCCESS=true
+                              break
+                          fi
+                      fi
+                  fi
+              fi
+              
+              if [ -z "$EBS_DEVICE" ]; then
+                  log "⏳ No EBS volume found yet, waiting 10 seconds..."
+                  sleep 10
+              fi
+          done
+
+          # Handle EBS volume mounting
+          if [ "$EBS_SUCCESS" = "true" ] && [ ! -z "$EBS_DEVICE" ]; then
+              log "🔧 Setting up EBS volume: $EBS_DEVICE"
+              mkdir -p /mnt/data
+              
+              # Check if already formatted
+              if blkid "$EBS_DEVICE" >/dev/null 2>&1; then
+                  EXISTING_FS=$(blkid -o value -s TYPE "$EBS_DEVICE")
+                  log "📝 Device $EBS_DEVICE already has filesystem: $EXISTING_FS"
+              else
+                  log "📝 Formatting $EBS_DEVICE with ext4..."
+                  if mkfs.ext4 -F "$EBS_DEVICE"; then
+                      success_log "EBS volume formatted successfully"
+                  else
+                      error_log "Failed to format EBS volume"
+                  fi
+              fi
+              
+              # Mount the volume
+              log "📌 Mounting $EBS_DEVICE to /mnt/data..."
+              if mount "$EBS_DEVICE" /mnt/data; then
+                  success_log "EBS volume mounted successfully"
+                  
+                  # Add to fstab for persistence
+                  DEVICE_UUID=$(blkid -s UUID -o value "$EBS_DEVICE")
+                  if [ ! -z "$DEVICE_UUID" ]; then
+                      echo "UUID=$DEVICE_UUID /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
+                      log "📝 Added to fstab with UUID: $DEVICE_UUID"
+                  else
+                      echo "$EBS_DEVICE /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
+                      log "📝 Added to fstab with device path"
+                  fi
+                  
+                  # Set ownership
+                  chown ubuntu:ubuntu /mnt/data
+                  chmod 755 /mnt/data
+                  
+                  # Verify the mount
+                  if df -h | grep -q "/mnt/data"; then
+                      MOUNT_SIZE=$(df -h /mnt/data | tail -1 | awk '{print $2}')
+                      success_log "EBS volume mount verified - Available space: $MOUNT_SIZE"
+                  else
+                      error_log "Mount verification failed"
+                  fi
+                  
+              else
+                  error_log "Failed to mount EBS volume $EBS_DEVICE"
+                  # Fallback: create directory anyway
+                  mkdir -p /mnt/data
+                  chown ubuntu:ubuntu /mnt/data
+                  log "📁 Created /mnt/data directory as fallback"
+              fi
+              
+          else
+              error_log "Could not find EBS volume after 60 attempts"
+              log "🔍 Final device scan for debugging:"
+              lsblk -o NAME,SIZE,MOUNTPOINT,TYPE | tee -a /var/log/${ProjectName}-setup.log
+              log "📁 Creating /mnt/data directory as fallback..."
+              mkdir -p /mnt/data
+              chown ubuntu:ubuntu /mnt/data
+          fi
+
+          # Final verification
+          log "📊 Final disk space after EBS setup:"
+          df -h | tee -a /var/log/${ProjectName}-setup.log
+
+          # Clone repository
+          log "📁 Cloning repository from ${GitRepository} (branch: ${GitBranch})..."
+          cd /mnt/data
+
+          # Extract repository name from URL
+          REPO_NAME=$(basename "${GitRepository}" .git)
+          log "📂 Repository name: $REPO_NAME"
+
+          if [ ! -d "$REPO_NAME" ]; then
+              if git clone -b ${GitBranch} ${GitRepository}; then
+                  success_log "Repository cloned successfully"
+                  chown -R ubuntu:ubuntu "$REPO_NAME"
+              else
+                  error_log "Failed to clone repository"
+              fi
+          fi
+
+          # Verify requirements.txt from repository
+          log "📋 Using requirements.txt from repository..."
+          cd /mnt/data/$REPO_NAME
+          if [ -f "requirements.txt" ]; then
+              log "Requirements file found in repository:"
+              head -10 requirements.txt | tee -a /var/log/${ProjectName}-setup.log
+              success_log "Using repository requirements.txt"
+          else
+              error_log "No requirements.txt found in repository"
+              log "Creating minimal requirements.txt as fallback..."
+              echo "numpy>=1.24.0" > requirements.txt
+              echo "jupyter>=1.0.0" >> requirements.txt
+              echo "qiskit>=1.0.0" >> requirements.txt
+          fi
+
+          # Clean system before heavy installations
+          log "🧹 Cleaning system before package installation..."
+          apt autoremove -y 2>/dev/null || true
+          apt autoclean 2>/dev/null || true
+          docker system prune -f 2>/dev/null || true
+
+          # Check available space before installing
+          AVAILABLE_SPACE_BEFORE=$$(df / | awk 'NR==2 {print $$4}')
+          log "Available disk space before Python packages: $$AVAILABLE_SPACE_BEFORE KB"
+
+          # Install core Python packages step by step
+          log "🐍 Installing Python packages in stages..."
+
+          # Stage 1: Core scientific computing
+          log "Stage 1: Installing core packages..."
+          pip3 install --no-cache-dir --upgrade pip
+          pip3 install --no-cache-dir "numpy>=1.24.0" && success_log "numpy installed" || error_log "numpy failed"
+
+          # Check space after numpy
+          SPACE_CHECK=$$(df / | awk 'NR==2 {print $$4}')
+          if [ "$$SPACE_CHECK" -lt 1000000 ]; then
+              log "Low disk space detected, cleaning up..."
+              apt autoremove -y && apt autoclean
+              pip3 cache purge 2>/dev/null || true
+          fi
+
+          # Stage 2: Jupyter environment
+          log "Stage 2: Installing Jupyter..."
+          pip3 install --no-cache-dir "jupyter>=1.0.0" "notebook>=7.0.0" && success_log "Jupyter installed" || error_log "Jupyter failed"
+
+          # Stage 3: Basic utilities
+          log "Stage 3: Installing utilities..."
+          pip3 install --no-cache-dir "tqdm>=4.65.0" && success_log "tqdm installed" || error_log "tqdm failed"
+
+          # Stage 4: Quantum computing packages (most critical)
+          log "Stage 4: Installing Qiskit (latest version)..."
+          if pip3 install --no-cache-dir "qiskit>=1.0.0"; then
+              success_log "Qiskit latest version installed successfully"
+          else
+              log "Attempting Qiskit with specific compatible version..."
+              pip3 install --no-cache-dir "qiskit==1.0.2" && success_log "Qiskit 1.0.2 installed" || error_log "Qiskit installation failed"
+          fi
+
+          # Set up SSH keys
+          log "🔑 Setting up SSH keys..."
+          mkdir -p /home/ubuntu/.ssh
+          echo "${SSHPublicKey}" >> /home/ubuntu/.ssh/authorized_keys
+          chmod 600 /home/ubuntu/.ssh/authorized_keys
+          chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+          success_log "SSH keys configured"
+
+          # Start Jupyter on host (simpler approach)
+          log "🪐 Starting Jupyter Notebook server on host..."
+          cd /mnt/data/$REPO_NAME || cd /mnt/data || cd /home/ubuntu
+
+          if which jupyter >/dev/null 2>&1; then
+              nohup sudo -u ubuntu jupyter notebook \
+                  --ip=0.0.0.0 \
+                  --port=8888 \
+                  --no-browser \
+                  --notebook-dir=/mnt/data/$REPO_NAME \
+                  --NotebookApp.token=${ProjectName}token \
+                  --NotebookApp.password='' \
+                  --allow-root \
+                  > /var/log/jupyter.log 2>&1 &
+              success_log "Jupyter Notebook started successfully"
+          else
+              error_log "Jupyter not available, skipping..."
+          fi
+
+          # Docker container setup with enhanced error handling
+          log "🐳 Attempting Docker container setup..."
+          cd /mnt/data/$REPO_NAME 2>/dev/null || { log "Repository directory not found, skipping Docker build"; }
+
+          if [ -f "infra/Dockerfile" ] && docker info >/dev/null 2>&1; then
+              # Pre-build cleanup and space check
+              log "Preparing for Docker build..."
+              docker system prune -f
+              DOCKER_SPACE=$$(df / | awk 'NR==2 {print $$4}')
+              log "Available space for Docker build: $$DOCKER_SPACE KB"
+              
+              if [ "$$DOCKER_SPACE" -gt 2000000 ]; then
+                  log "Building Docker image with Dockerfile from infra/..."
+                  if timeout 1800 docker build -f infra/Dockerfile -t ${ProjectName}-dev .; then
+                      success_log "Docker image built successfully"
+                      
+                      # Run container
+                      docker stop ${ProjectName}-dev 2>/dev/null || true
+                      docker rm ${ProjectName}-dev 2>/dev/null || true
+                      
+                      if docker run -d \
+                        --name ${ProjectName}-dev \
+                        -p 8080:8080 \
+                        -p 2222:22 \
+                        -v /mnt/data:/mnt/data \
+                        -v /mnt/data/${ProjectName}:/home/devuser/workspace \
+                        --restart unless-stopped \
+                        ${ProjectName}-dev; then
+                          success_log "Docker container started successfully"
+                      else
+                          error_log "Failed to start Docker container"
+                      fi
+                  else
+                      error_log "Docker build failed or timed out"
+                      log "Continuing with host-only setup..."
+                  fi
+              else
+                  log "Insufficient disk space for Docker build (need >2GB), skipping..."
+                  log "Host-only Jupyter environment is available"
+              fi
+          else
+              log "Docker setup skipped (no infra/Dockerfile or Docker not available)"
+          fi
+
+          # Final status
+          echo "${ProjectName} development environment setup completed at $(date)" > /mnt/data/$REPO_NAME/setup-complete.txt 2>/dev/null || echo "Setup completed" > /tmp/setup-complete.txt
+
+          log "🎉 ${ProjectName} development environment setup completed!"
+          log "🧪 CPU Test Instance setup finished"
+          log "📋 Available services:"
+
+          # Get public IP
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "CHECK_AWS_CONSOLE")
+          log "   - Jupyter Notebook: http://$$PUBLIC_IP:8888 (token: ${ProjectName}token)"
+
+          if docker ps | grep -q ${ProjectName}-dev; then
+              log "   - VSCode Web: http://$$PUBLIC_IP:8080"
+              log "   - SSH to container: ssh devuser@$$PUBLIC_IP -p 2222"
+          fi
+
+          log "   - SSH to EC2: ssh ubuntu@$$PUBLIC_IP"
+          log "🚀 Next: Test environment, then request GPU quota for g4dn.2xlarge"
+
+          # Final disk space check
+          log "💾 Final disk space usage:"
+          df -h | tee -a /var/log/${ProjectName}-setup.log
+
+          success_log "Setup script completed successfully!"
+
+  VolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref ProjectInstance
+      VolumeId: !Ref ProjectVolume
+      Device: /dev/xvdf
+
+  ProjectElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ElasticIP'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ProjectEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref ProjectInstance
+      EIP: !Ref ProjectElasticIP
+
+Outputs:
+  StaticIP:
+    Description: Elastic IP address
+    Value: !Ref ProjectElasticIP
+
+  JupyterURL:
+    Description: Jupyter Notebook URL
+    Value: !Sub 'http://${ProjectElasticIP}:8888 (token: ${ProjectName}token)'
+
+  VSCodeURL:
+    Description: VSCode Web URL (if container running)
+    Value: !Sub 'http://${ProjectElasticIP}:8080'
+
+  ContainerSSH:
+    Description: SSH access to container (port 2222)
+    Value: !Sub 'ssh -p 2222 devuser@${ProjectElasticIP}'
+
+  EC2SSH:
+    Description: SSH access to EC2 instance
+    Value: !Sub 'ssh ubuntu@${ProjectElasticIP}'
+
+  InstanceType:
+    Description: Instance type and billing
+    Value: !Sub '${InstanceType} (${ProjectName} CPU Testing)'
+
+  NextSteps:
+    Description: What to do next
+    Value: !Sub 'Test ${ProjectName} environment with Jupyter, then request GPU quota for g4dn.2xlarge'

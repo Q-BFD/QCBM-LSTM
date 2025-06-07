@@ -1,16 +1,42 @@
 #!/bin/bash
 
 # =============================
+# Generic SSH Config Setup Script
+# =============================
+
+# Project name from argument or default
+PROJECT_NAME="${1:-qcbm}"  # First argument or default to 'qcbm'
+
+# =============================
+# Usage Information
+# =============================
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "📋 Usage: $0 [PROJECT_NAME]"
+    echo ""
+    echo "Examples:"
+    echo "   $0 qcbm          # Setup SSH for project 'qcbm'"
+    echo "   $0 myproject     # Setup SSH for project 'myproject'"
+    echo "   $0               # Setup SSH for default 'qcbm'"
+    echo ""
+    echo "📦 This will configure SSH access to:"
+    echo "   - EC2 Instance: {PROJECT_NAME}"
+    echo "   - Docker Container: {PROJECT_NAME}-container"
+    exit 0
+fi
+
+echo "🎯 Project Name: $PROJECT_NAME"
+
+# =============================
 # Configuration Variables
 # =============================
-STACK_NAME="qcbm-dev-cpu"              # CloudFormation 스택 이름 (deploy.sh와 일치)
-ALIAS_NAME="qcbm"                        # SSH 별칭
-USER_NAME="ubuntu"                       # EC2 기본 사용자 (Ubuntu 기준)
-PORT=22                                  # EC2 SSH 포트
-CONFIG_FILE="$HOME/.ssh/config"          # SSH 설정파일 경로
+STACK_NAME="${PROJECT_NAME}-dev-cpu"        # CloudFormation 스택 이름 (deploy-cpu.sh와 일치)
+ALIAS_NAME="$PROJECT_NAME"                   # SSH 별칭
+USER_NAME="ubuntu"                           # EC2 기본 사용자 (Ubuntu 기준)
+PORT=22                                      # EC2 SSH 포트
+CONFIG_FILE="$HOME/.ssh/config"              # SSH 설정파일 경로
 
 # SSH 키 파일 설정
-EC2_KEY_NAME="qcbm-dev-key"              # EC2 Key Pair 이름
+EC2_KEY_NAME="${PROJECT_NAME}-dev-key"       # EC2 Key Pair 이름
 EC2_KEY_FILE="$HOME/.ssh/${EC2_KEY_NAME}.pem"  # EC2 접속용 키
 
 # ⭐ 개인 SSH 키 파일 우선순위 (Container 접속용)
@@ -126,7 +152,7 @@ remove_existing_host "${ALIAS_NAME}-container" "$CONFIG_FILE"
 # Add new SSH config entry
 cat <<EOF >> "$CONFIG_FILE"
 
-# QCBM Development Environment - EC2 Instance
+# ${PROJECT_NAME} Development Environment - EC2 Instance
 Host ${ALIAS_NAME}
     HostName ${EIP}
     User ${USER_NAME}
@@ -137,7 +163,7 @@ Host ${ALIAS_NAME}
     UserKnownHostsFile /dev/null
     LogLevel ERROR
 
-# QCBM Development Environment - Docker Container
+# ${PROJECT_NAME} Development Environment - Docker Container
 Host ${ALIAS_NAME}-container
     HostName ${EIP}
     User devuser

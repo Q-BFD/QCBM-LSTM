@@ -1,736 +1,141 @@
-# QCBM-LSTM
+# QCBM-LSTM: Quantum Circuit Born Machine with LSTM Architecture
 
-## 프로젝트 소개
+A quantum machine learning project implementing Quantum Circuit Born Machine (QCBM) enhanced with Long Short-Term Memory (LSTM) networks for advanced pattern recognition and generation tasks.
 
-이 프로젝트는 Quantum Circuit Born Machine (QCBM)과 Long Short-Term Memory (LSTM) 네트워크를 결합한 하이브리드 양자-클래식 머신러닝 모델을 구현합니다.
+## 🚀 Quick Start - Cloud Development Environment
 
-## 주요 기능
+Deploy a complete AWS development environment in 3 simple steps:
 
-- QCBM을 이용한 양자 회로 기반 생성 모델
-- LSTM을 이용한 시계열 데이터 처리
-- 양자-클래식 하이브리드 학습 알고리즘
-
-## 설치 방법
+### 1. Deploy Infrastructure (5 minutes)
 
 ```bash
-# 필요한 패키지 설치
+# Deploy with project name
+./deploy-cpu.sh qcbm
+
+# Or with custom name
+./deploy-cpu.sh myproject
+```
+
+### 2. Setup SSH Access
+
+```bash
+# Setup SSH configuration
+./setup-ssh.sh qcbm
+```
+
+### 3. Connect & Develop
+
+```bash
+# SSH to EC2 instance
+ssh qcbm
+
+# SSH to Docker container (recommended for development)
+ssh qcbm-container
+```
+
+### 4. Access Web Interfaces
+
+- **Jupyter Notebook**: `http://YOUR_ELASTIC_IP:8888` (token: `qcbmtoken`)
+- **VSCode Web**: `http://YOUR_ELASTIC_IP:8080`
+
+## 💰 Cost Information
+
+- **t3.large CPU instance**: ~$0.09/hour (~$65/month)
+- **50GB EBS storage**: ~$5/month
+- **Elastic IP**: Free when attached to running instance
+
+## 🔧 Local Development
+
+For local development without cloud infrastructure:
+
+```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Run Jupyter locally
+jupyter notebook
 ```
 
-## 프로젝트 구조
-
-```
-QCBM-LSTM/
-├── data/               # 데이터 파일
-├── models/            # 모델 구현
-├── utils/             # 유틸리티 함수
-└── notebooks/         # 주피터 노트북
-```
-
-# QCBM-LSTM AWS 개발 환경
-
-이 프로젝트는 **QCBM (Quantum Circuit Born Machine)과 LSTM**을 활용한 양자 머신러닝 연구를 위한 **완전 자동화된 AWS 클라우드 개발 환경**을 제공합니다.
-
-**🚀 원클릭 배포**로 CloudFormation을 사용하여 EC2 인스턴스에 Docker 기반 개발 환경을 자동으로 구축하고, VSCode Remote SSH를 통해 즉시 원격 개발이 가능합니다.
-
-## 🏗️ 인프라 구성
-
-- **EC2 인스턴스**: Ubuntu 22.04 기반 개발 서버
-- **Docker 컨테이너**: 격리된 개발 환경 (자동 구성)
-- **EBS 볼륨**: 영구 데이터 저장 (자동 감지 및 마운트)
-- **Elastic IP**: 고정 IP 주소
-- **Security Group**: SSH, VSCode, Docker 포트 개방
-
-## ✨ 완전 자동화 기능
-
-### 🎯 **원클릭 배포**
-
-- ✅ **EBS 볼륨 자동 감지** (`/dev/nvme1n1`, `/dev/xvdf` 등 자동 처리)
-- ✅ **자동 포맷 및 마운트**
-- ✅ **Git 리포지토리 자동 클론**
-- ✅ **Docker 이미지 자동 빌드**
-- ✅ **컨테이너 자동 실행**
-- ✅ **SSH 키 자동 주입**
-- ✅ **Python 패키지 자동 설치**
-- ✅ **VSCode Server 자동 설정**
-
-### 📦 **사전 구성된 개발 환경**
-
-- **양자 컴퓨팅**: Qiskit, Qiskit Aer
-- **머신러닝**: PyTorch, Scikit-learn
-- **데이터 분석**: NumPy, Pandas, Matplotlib
-- **개발 도구**: Jupyter Notebook, VSCode Server
-
-## 📋 사전 준비사항
-
-### 1. AWS 설정
-
-```bash
-# AWS CLI 설치 및 설정
-aws configure
-```
-
-### 2. SSH 키 생성 (없는 경우)
-
-```bash
-# ED25519 키 생성 (권장)
-ssh-keygen -t ed25519 -C "your_email@example.com"
-
-# 또는 RSA 키 생성
-ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
-```
-
-### 3. AWS EC2 Key Pair 생성
-
-AWS Console에서 EC2 Key Pair를 생성하거나 기존 키를 사용하세요.
-
-## 🔑 SSH 키 구조 및 역할
-
-이 프로젝트는 **두 종류의 SSH 키**를 사용하여 보안성과 편의성을 모두 확보합니다.
-
-### 📋 SSH 키 구조
-
-```
-📁 SSH Keys
-├── ~/.ssh/qcbm-dev-key.pem                      # AWS EC2 Key Pair (EC2 접속용)
-└── ~/.ssh/id_ed25519_github_qb_frontier.pub     # 개인 SSH Key (Docker 개발용)
-```
-
-### 🏗️ 전체 접속 아키텍처
-
-```
-로컬 개발자
-    ↓ (AWS EC2 Key Pair)
-EC2 인스턴스 (Ubuntu)
-    ↓ (개인 SSH Key 자동 주입)
-Docker 컨테이너 (개발환경)
-```
-
-### 🔐 두 키의 역할
-
-#### 1️⃣ AWS EC2 Key Pair (`qcbm-dev-key`)
-
-**목적**: EC2 인스턴스에 **최초 접속**하기 위한 키
-
-```bash
-# 직접 EC2 인스턴스 접속 (서버 관리용)
-ssh -i ~/.ssh/qcbm-dev-key.pem ubuntu@[EC2-IP]
-
-# 또는 SSH config 설정 후
-ssh qcbm
-```
-
-**특징**:
-
-- ✅ AWS에서 관리하는 공식 Key Pair
-- ✅ EC2 인스턴스 생성 시 자동으로 `ubuntu` 사용자에 주입
-- ✅ 서버 관리, 로그 확인, Docker 관리 등에 사용
-
-#### 2️⃣ 개인 SSH Key (`id_ed25519_github_qb_frontier`)
-
-**목적**: Docker 컨테이너에서 **개발 작업**을 위한 키
-
-```bash
-# Docker 컨테이너 직접 접속 (개발용)
-ssh qcbm-container
-
-# VSCode Remote SSH 연결
-# VSCode → Remote-SSH → qcbm-container
-```
-
-**특징**:
-
-- ✅ 개인이 생성한 SSH 키
-- ✅ CloudFormation 배포 시 컨테이너에 **자동 주입**
-- ✅ VSCode Remote SSH, 개발 작업에 최적화
-- ✅ GitHub 등 다른 서비스와 동일한 키 재사용 가능
-
-### 🔄 Key Pair 생성 시점
-
-#### ✅ **한 번만 생성하면 됨**
-
-```bash
-# 자동 생성 (deploy.sh가 확인 후 없으면 자동 생성)
-./deploy.sh
-
-# 또는 수동 생성
-aws ec2 create-key-pair --key-name qcbm-dev-key \
-  --query 'KeyMaterial' --output text > ~/.ssh/qcbm-dev-key.pem
-chmod 600 ~/.ssh/qcbm-dev-key.pem
-```
-
-#### 🔄 **언제 새로 만들어야 하나?**
-
-1. **처음 AWS 사용할 때**
-2. **다른 리전 사용할 때** (Key Pair는 리전별 관리)
-3. **보안상 교체가 필요할 때**
-4. **팀원별로 다른 키를 사용할 때**
-
-### 🚀 자동화된 Key Pair 관리
-
-`deploy.sh` 스크립트는 **Key Pair를 자동으로 관리**합니다:
-
-```bash
-🔍 Checking AWS EC2 Key Pair: qcbm-dev-key
-✅ Key Pair 'qcbm-dev-key' already exists        # 이미 있으면 재사용
-# 또는
-⚠️  Key Pair 'qcbm-dev-key' not found. Creating new one...
-✅ Key Pair created successfully: ~/.ssh/qcbm-dev-key.pem
-```
-
-### 🛡️ 보안 고려사항
-
-#### AWS EC2 Key Pair
-
-- ❗ **Private Key (`.pem`) 파일은 절대 공유하지 마세요**
-- ✅ 권한을 `600`으로 설정 (소유자만 읽기/쓰기)
-- ✅ 버전 관리(Git)에 포함하지 마세요
-
-#### 개인 SSH Key
-
-- ✅ 기존에 사용하던 안전한 키 재사용 권장
-- ✅ Public Key만 AWS에 전송됨 (Private Key는 로컬에만)
-- ✅ GitHub, GitLab 등과 동일한 키 사용 가능
-
-### 📊 키별 접속 방법 비교
-
-| 키 종류          | 접속 대상       | 주요 용도         | 접속 방법                                  |
-| ---------------- | --------------- | ----------------- | ------------------------------------------ |
-| **EC2 Key Pair** | EC2 인스턴스    | 서버 관리, 디버깅 | `ssh qcbm`                                 |
-| **개인 SSH Key** | Docker 컨테이너 | 개발 작업         | `ssh qcbm-container`<br/>VSCode Remote SSH |
-
-## 🚀 원클릭 배포 과정
-
-### 1단계: 설정 수정
-
-`deploy.sh` 파일의 설정을 수정하세요:
-
-```bash
-# deploy.sh 파일 수정
-KEY_NAME="your-actual-key-pair-name"    # AWS EC2 Key Pair 이름
-SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519.pub"  # SSH public key 파일 경로
-```
-
-### 2단계: 원클릭 배포
-
-```bash
-# 실행 권한 부여
-chmod +x deploy.sh
-
-# 원클릭 배포 (모든 것이 자동화됨!)
-./deploy.sh
-```
-
-**🎉 자동으로 완료되는 작업들:**
-
-- ✅ EC2 인스턴스 생성 (t3.medium)
-- ✅ EBS 볼륨 생성 및 자동 마운트 (50GB)
-- ✅ Elastic IP 할당
-- ✅ Security Group 설정
-- ✅ Git 리포지토리 클론
-- ✅ Docker 이미지 빌드
-- ✅ Docker 컨테이너 실행
-- ✅ SSH 키 자동 주입
-- ✅ Python 패키지 설치
-- ✅ VSCode Server 설정
-- ✅ **개발 환경 완료!**
-
-### 3단계: SSH 설정
-
-```bash
-# 실행 권한 부여
-chmod +x setup_ssh_config.sh
-
-# SSH 설정 실행
-./setup_ssh_config.sh
-```
-
-**생성되는 SSH 설정:**
-
-```
-Host qcbm                    # EC2 인스턴스 접속
-Host qcbm-container         # Docker 컨테이너 접속
-```
-
-## 💻 개발 환경 접속
-
-### 방법 1: VSCode Remote SSH (권장)
-
-1. **VSCode에서 Remote-SSH 확장 설치**
-2. **Command Palette** (`Cmd+Shift+P`)
-3. **"Remote-SSH: Connect to Host..."** 선택
-4. **`qcbm-container`** 선택
-5. 🎉 **Docker 컨테이너에 직접 연결!**
-
-### 방법 2: 터미널 SSH
-
-```bash
-# EC2 인스턴스 접속 (서버 관리)
-ssh qcbm
-
-# Docker 컨테이너 접속 (개발 작업)
-ssh qcbm-container
-```
-
-### 방법 3: VSCode Web (브라우저)
-
-```
-http://[ELASTIC_IP]:8080
-# 비밀번호: qcbmpassword
-```
-
-## 📁 프로젝트 구조
+## 📊 Project Structure
 
 ```
 QCBM-LSTM/
-├── cloudformation.yml          # AWS 인프라 정의 (완전 자동화)
-├── deploy.sh                   # 원클릭 배포 스크립트
-├── setup_ssh_config.sh         # SSH 설정 스크립트
-├── Dockerfile                  # Docker 이미지 정의 (자동 SSH 설정)
-├── requirements.txt            # Python 의존성 (양자 ML 패키지)
-├── README.md                   # 이 파일
-└── [연구 코드들...]            # 자동으로 /home/devuser/workspace에 마운트
+├── deploy-cpu.sh           # Quick cloud deployment
+├── setup-ssh.sh           # SSH configuration setup
+├── .infra/                 # Infrastructure automation (hidden - ignore this!)
+│   ├── cloudformation-cpu.yml
+│   ├── deploy-cpu.sh
+│   ├── setup_ssh_config.sh
+│   └── Dockerfile
+├── src/                    # Source code
+├── notebooks/              # Jupyter notebooks
+├── requirements.txt        # Python dependencies
+└── README.md              # This file
 ```
 
-## 🔧 주요 기능
+## 🧠 QCBM Architecture
 
-### 🎯 완전 자동화된 배포
+The Quantum Circuit Born Machine (QCBM) is implemented with:
 
-- ✅ **원클릭 배포**: `./deploy.sh` 한 번으로 전체 환경 구축
-- ✅ **스마트 EBS 마운트**: 디바이스 이름 자동 감지 (`/dev/nvme1n1`, `/dev/xvdf` 등)
-- ✅ **SSH 키 자동 주입**: 로컬 SSH 키를 자동으로 컨테이너에 주입
-- ✅ **영구 스토리지**: EBS 볼륨으로 데이터 영구 보존
-- ✅ **자동 복구**: 컨테이너 재시작 정책 (`--restart unless-stopped`)
+- **Variational Quantum Circuits**: Parameterized quantum circuits for data representation
+- **LSTM Enhancement**: Classical LSTM networks for temporal pattern recognition
+- **Hybrid Training**: Combined quantum-classical optimization
+- **Efficient Sampling**: Born machine approach for probabilistic data generation
 
-### 🐳 사전 구성된 개발 환경
+## 📚 Research Background
 
-- ✅ **양자 컴퓨팅**: Qiskit 2023 최신 버전
-- ✅ **머신러닝**: PyTorch, Scikit-learn
-- ✅ **데이터 분석**: NumPy, Pandas, Matplotlib, Plotly
-- ✅ **개발 도구**: Jupyter Notebook, VSCode Server
-- ✅ **시스템 도구**: Git, Vim, Nano, Htop
+This project explores the intersection of:
 
-### 🛡️ 보안 및 편의성
+- Quantum machine learning
+- Generative modeling
+- Temporal sequence modeling
+- Variational quantum algorithms
 
-- ✅ **SSH 키 인증**: 비밀번호 없는 안전한 인증
-- ✅ **Security Group**: 필요한 포트만 개방
-- ✅ **Elastic IP**: 고정 IP로 안정적 접속
-- ✅ **자동 로깅**: 모든 설정 과정이 `/var/log/qcbm-setup.log`에 기록
+## 🔬 Features
 
-## 🛠️ 사용 가능한 서비스
+- ✅ Quantum circuit implementation with Qiskit
+- ✅ LSTM integration for sequence modeling
+- ✅ Hybrid quantum-classical training
+- ✅ Born machine sampling techniques
+- ✅ Comprehensive evaluation metrics
+- ✅ Cloud development environment
+- ✅ Jupyter notebook examples
 
-| 서비스            | 접속 방법                   | 포트 | 용도         | 인증 방식           | 비밀번호          |
-| ----------------- | --------------------------- | ---- | ------------ | ------------------- | ----------------- |
-| **EC2 SSH**       | `ssh qcbm`                  | 22   | 서버 관리    | SSH Key (자동 설정) | ❌ 없음           |
-| **Container SSH** | `ssh qcbm-container`        | 2222 | 개발 작업    | SSH Key (자동 설정) | ❌ 없음           |
-| **VSCode Web**    | `http://[IP]:8080`          | 8080 | 웹 IDE       | 비밀번호 인증       | ✅ `qcbmpassword` |
-| **VSCode Remote** | Remote-SSH → qcbm-container | 2222 | 데스크톱 IDE | SSH Key (권장 방법) | ❌ 없음           |
+## 🚀 Getting Started with Research
 
-### 🔐 **인증 방식 상세**
+1. **Deploy cloud environment**: `./deploy-cpu.sh qcbm`
+2. **Setup SSH**: `./setup-ssh.sh qcbm`
+3. **Connect**: `ssh qcbm-container`
+4. **Run notebooks**: Access Jupyter at `http://YOUR_IP:8888`
+5. **Experiment**: Modify parameters and observe results
 
-#### 🔑 **SSH Key 기반 접속** (비밀번호 불필요)
+## 📝 Requirements
 
-- **EC2 SSH**: AWS EC2 Key Pair 자동 사용
-- **Container SSH**: 개인 SSH Key 자동 주입
-- **VSCode Remote SSH**: 개인 SSH Key 사용
-- **장점**: 비밀번호 입력 없이 안전한 키 기반 인증
+- Python 3.8+
+- Qiskit ≥ 1.0.0
+- PyTorch ≥ 2.0.0
+- NumPy, Matplotlib, Jupyter
+- AWS CLI (for cloud deployment)
 
-#### 🌐 **VSCode Web 접속** (비밀번호 필요)
+## 🌟 Advanced Features
 
-```
-🔗 주소: http://[ELASTIC_IP]:8080
-🔑 비밀번호: qcbmpassword
-```
+- **GPU Support**: Request AWS GPU quota for accelerated training
+- **Distributed Training**: Multi-node quantum circuit simulation
+- **Custom Datasets**: Easy integration with your data
+- **Model Persistence**: Automatic model saving and loading
 
-- **장점**: 브라우저만으로 즉시 접속 가능
-- **용도**: 빠른 코드 확인, 웹 기반 개발
+## 📄 License
 
-## 🔄 간소화된 워크플로우
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-### 🚀 초기 설정 (5분 완료!)
+## 🤝 Contributing
 
-```bash
-1. git clone https://github.com/Q-BFD/QCBM-LSTM.git
-2. cd QCBM-LSTM
-3. vi deploy.sh          # KEY_NAME 수정
-4. ./deploy.sh           # 원클릭 배포 (자동화!)
-5. ./setup_ssh_config.sh # SSH 설정
-6. VSCode Remote-SSH 연결 # 즉시 개발 시작!
-```
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-### 💼 일상적인 개발
+## 📞 Support
 
-```bash
-1. VSCode에서 Remote-SSH → qcbm-container 연결
-2. /home/devuser/workspace에서 코드 편집
-3. Jupyter Notebook 또는 터미널에서 실행
-4. 모든 작업이 EBS에 영구 저장
-```
+For questions about:
 
-### 📊 개발 환경 정보 확인
-
-```bash
-# 컨테이너에서 실행
-ssh qcbm-container
-python3 -c "import qiskit; print(f'Qiskit: {qiskit.__version__}')"
-python3 -c "import torch; print(f'PyTorch: {torch.__version__}')"
-jupyter --version
-```
-
-## 🚨 문제 해결
-
-### 🔍 배포 상태 확인
-
-```bash
-# CloudFormation 스택 상태 확인
-aws cloudformation describe-stacks --stack-name qcbm-dev-stack
-
-# 상세 로그 확인 (EC2에서)
-ssh qcbm "tail -f /var/log/qcbm-setup.log"
-
-# Docker 컨테이너 상태 확인
-ssh qcbm "docker ps -a"
-ssh qcbm "docker logs qcbm-dev"
-```
-
-### 🔧 자동 복구 기능
-
-시스템이 자동으로 처리하는 문제들:
-
-- ✅ **EBS 볼륨 디바이스 이름 변경** → 자동 감지
-- ✅ **Docker 컨테이너 중지** → 자동 재시작
-- ✅ **SSH 키 권한 문제** → 자동 설정
-- ✅ **Python 패키지 누락** → 자동 설치
-
-### 🆘 수동 문제 해결
-
-#### SSH 연결 실패
-
-```bash
-# SSH 키 권한 확인
-chmod 600 ~/.ssh/id_*
-
-# SSH 연결 테스트
-ssh -v qcbm-container
-```
-
-#### 컨테이너 재시작
-
-```bash
-# 컨테이너 재시작
-ssh qcbm "docker restart qcbm-dev"
-
-# 완전 재구축
-ssh qcbm "cd /mnt/data/QCBM-LSTM && docker build -t qcbm-dev . && docker restart qcbm-dev"
-```
-
-#### 환경 초기화
-
-```bash
-# CloudFormation 스택 삭제 후 재배포
-aws cloudformation delete-stack --stack-name qcbm-dev-stack
-# 스택 삭제 완료 후
-./deploy.sh
-```
-
-## 🎯 성능 최적화
-
-### 💰 비용 관리
-
-#### 리소스 정리
-
-```bash
-# CloudFormation 스택 삭제 (모든 리소스 정리)
-aws cloudformation delete-stack --stack-name qcbm-dev-stack
-```
-
-#### 비용 최적화 팁
-
-- **인스턴스 중지**: 사용하지 않을 때 EC2 인스턴스 중지
-- **스케줄링**: CloudWatch Events로 자동 시작/중지 설정
-- **볼륨 관리**: 불필요한 EBS 스냅샷 정리
-- **스팟 인스턴스**: 비용 절약을 위해 스팟 인스턴스 고려
-
-### ⚡ 성능 튜닝
-
-#### 인스턴스 타입 변경
-
-```bash
-# deploy.sh에서 수정
-INSTANCE_TYPE="t3.large"  # 또는 "c5.xlarge" (CPU 집약적 작업용)
-```
-
-#### GPU 지원 (선택사항)
-
-```bash
-# GPU 인스턴스 사용시 (p3.2xlarge 등)
-# requirements.txt에 추가:
-# torch-torchvision-cpu → torch-torchvision-cuda
-```
-
-## 🤝 기여
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 있습니다. 자세한 내용은 `LICENSE` 파일을 참조하세요.
-
-## 📞 지원
-
-문제가 있거나 질문이 있으시면 GitHub Issues를 통해 문의해주세요.
-
----
-
-**🎯 Happy Quantum Computing with Automated Cloud Development!** 🚀✨
-
----
-
-## 🛠️ 개발자 참고: 유용한 명령어 모음
-
-> 자동화 개발 과정에서 사용된 핵심 명령어들을 역할별로 정리했습니다. 문제 해결이나 커스터마이징 시 참고하세요.
-
-### 🔐 **AWS 환경 확인 및 인증**
-
-#### 현재 AWS 사용자 및 권한 확인
-
-```bash
-# AWS 계정 정보 확인
-aws sts get-caller-identity
-
-# AWS CLI 설정 확인
-aws configure list
-```
-
-### 🔑 **EC2 Key Pair 관리**
-
-#### Key Pair 확인 및 생성
-
-```bash
-# 특정 Key Pair 존재 확인
-aws ec2 describe-key-pairs --key-names [KEY_NAME]
-
-# 모든 Key Pair 목록 조회
-aws ec2 describe-key-pairs --query 'KeyPairs[*].KeyName' --output table
-
-# 새 Key Pair 생성 및 저장
-aws ec2 create-key-pair --key-name [KEY_NAME] \
-  --query 'KeyMaterial' --output text > ~/.ssh/[KEY_NAME].pem
-chmod 600 ~/.ssh/[KEY_NAME].pem
-```
-
-### ☁️ **CloudFormation 스택 관리**
-
-#### 스택 상태 확인 및 관리
-
-```bash
-# 스택 상태 확인
-aws cloudformation describe-stacks --stack-name [STACK_NAME] \
-  --query 'Stacks[0].StackStatus' --output text
-
-# 스택 출력 정보 확인 (JSON 형태)
-aws cloudformation describe-stacks --stack-name [STACK_NAME] \
-  --output json | jq -r '.Stacks[0].Outputs[] | "\(.OutputKey): \(.OutputValue)"'
-
-# 스택 삭제
-aws cloudformation delete-stack --stack-name [STACK_NAME]
-
-# 스택 삭제 완료 대기
-aws cloudformation wait stack-delete-complete --stack-name [STACK_NAME]
-
-# 실패한 리소스 확인
-aws cloudformation describe-stack-events --stack-name [STACK_NAME] \
-  --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
-  --output table
-
-# CloudFormation 템플릿 문법 검증
-aws cloudformation validate-template --template-body file://cloudformation-cpu.yml
-```
-
-#### 🚨 **CloudFormation 템플릿 디버깅**
-
-```bash
-# 템플릿 변수 참조 오류 확인
-# "Unresolved resource dependencies" 오류 발생 시:
-grep -n "\${[^}]*}" cloudformation-cpu.yml  # bash 변수가 CloudFormation 변수로 인식되는 경우
-
-# bash 변수 escape 확인 (UserData에서 $$ 사용해야 함)
-grep -n "\$[A-Z_]" cloudformation-cpu.yml | grep -v "\$\$"  # escape되지 않은 변수 찾기
-
-# Fn::Sub 문법 검증
-grep -A5 -B5 "Fn::Sub\|!Sub" cloudformation-cpu.yml
-```
-
-### 🏗️ **인프라 폴더 및 다중 인스턴스 관리**
-
-#### 여러 인스턴스 타입 배포
-
-```bash
-# CPU 테스트 인스턴스 배포 (GPU 할당량 불필요)
-cd infra
-./deploy-cpu.sh
-
-# GPU 온디맨드 인스턴스 배포
-./deploy-ondemand.sh
-
-# GPU Spot 인스턴스 배포 (60-90% 절약)
-./deploy-spot.sh
-
-# 스택별 상태 확인
-aws cloudformation describe-stacks --stack-name qcbm-dev-cpu
-aws cloudformation describe-stacks --stack-name qcbm-dev-ondemand
-aws cloudformation describe-stacks --stack-name qcbm-dev-spot
-```
-
-#### 인프라 정리 및 관리
-
-```bash
-# 모든 QCBM 스택 확인
-aws cloudformation list-stacks --query 'StackSummaries[?starts_with(StackName, `qcbm-dev`)].[StackName,StackStatus]' --output table
-
-# 특정 타입 스택만 삭제
-aws cloudformation delete-stack --stack-name qcbm-dev-cpu
-aws cloudformation delete-stack --stack-name qcbm-dev-ondemand
-aws cloudformation delete-stack --stack-name qcbm-dev-spot
-
-# 여러 스택 일괄 삭제
-for stack in qcbm-dev-cpu qcbm-dev-ondemand qcbm-dev-spot; do
-  aws cloudformation delete-stack --stack-name $stack
-done
-```
-
-### 📊 **UserData 실행 모니터링**
-
-#### 실시간 설정 로그 확인
-
-```bash
-# UserData 스크립트 실행 상태 실시간 모니터링
-ssh -i ~/.ssh/qcbm-dev-key.pem ubuntu@[ELASTIC_IP] 'tail -f /var/log/qcbm-setup.log'
-
-# 성공/실패 상태만 필터링
-ssh ubuntu@[ELASTIC_IP] 'tail -50 /var/log/qcbm-setup.log | grep -E "(SUCCESS|ERROR|✅|❌|🎉)"'
-
-# 특정 설정 단계 확인
-ssh ubuntu@[ELASTIC_IP] 'grep -n -A3 -B1 "Installing docker.io" /var/log/qcbm-setup.log'
-
-# 디스크 공간 변화 추적
-ssh ubuntu@[ELASTIC_IP] 'grep "disk space" /var/log/qcbm-setup.log'
-```
-
-#### UserData 실행 완료 확인
-
-```bash
-# 설정 완료 파일 확인
-ssh ubuntu@[ELASTIC_IP] 'ls -la /mnt/data/setup-complete.txt 2>/dev/null && echo "✅ 설정 완료" || echo "⏳ 설정 진행 중"'
-
-# Docker 설치 및 실행 상태 확인
-ssh ubuntu@[ELASTIC_IP] 'docker --version 2>/dev/null && echo "✅ Docker 설치됨" || echo "❌ Docker 미설치"'
-
-# Python 패키지 설치 상태 확인
-ssh ubuntu@[ELASTIC_IP] 'python3 -c "import qiskit; print(f\"✅ Qiskit {qiskit.__version__}\")" 2>/dev/null || echo "❌ Qiskit 미설치"'
-```
-
-### 🔧 **환경 초기화 및 재설정**
-
-#### 완전 재배포
-
-```bash
-# 스택 삭제 후 재배포 (CPU 테스트용)
-aws cloudformation delete-stack --stack-name qcbm-dev-cpu
-aws cloudformation wait stack-delete-complete --stack-name qcbm-dev-cpu
-./infra/deploy-cpu.sh
-
-# 스택 삭제 후 재배포 (GPU 온디맨드)
-aws cloudformation delete-stack --stack-name qcbm-dev-ondemand
-aws cloudformation wait stack-delete-complete --stack-name qcbm-dev-ondemand
-./infra/deploy-ondemand.sh
-```
-
-#### 컨테이너 재구축
-
-```bash
-# 컨테이너 중지 및 제거
-ssh qcbm "docker stop qcbm-dev && docker rm qcbm-dev"
-
-# 이미지 재빌드 및 실행
-ssh qcbm "cd /mnt/data/QCBM-LSTM && \
-          docker build -t qcbm-dev . && \
-          docker run -d --name qcbm-dev \
-            -p 8080:8080 -p 2222:22 \
-            -v /mnt/data:/mnt/data \
-            -v /mnt/data/QCBM-LSTM:/home/devuser/workspace \
-            --restart unless-stopped \
-            qcbm-dev"
-```
-
-### 🎯 **주요 사용 시나리오**
-
-#### 🚨 **문제 발생 시 체크리스트**
-
-1. **CloudFormation 스택 상태 확인**
-2. **EC2 인스턴스 SSH 연결 확인**
-3. **UserData 스크립트 실행 상태 확인**
-4. **Docker 컨테이너 상태 확인**
-5. **EBS 볼륨 마운트 상태 확인**
-6. **로그 파일 확인**
-
-#### 🔄 **정기 유지보수**
-
-1. **Docker 컨테이너 재시작**
-2. **시스템 업데이트**
-3. **디스크 공간 정리**
-4. **백업 확인**
-
-#### ⚡ **빠른 문제 해결**
-
-```bash
-# 원스톱 상태 확인 스크립트
-ssh qcbm "echo '=== System Info ===' && \
-          uname -a && \
-          echo '=== Disk Usage ===' && \
-          df -h && \
-          echo '=== Docker Status ===' && \
-          docker ps -a && \
-          echo '=== Setup Progress ===' && \
-          tail -10 /var/log/qcbm-setup.log && \
-          echo '=== Mount Points ===' && \
-          mount | grep /mnt/data"
-
-# 환경 설정 완료 상태 종합 확인
-ssh ubuntu@[ELASTIC_IP] "echo '=== 🔍 환경 설정 상태 확인 ===' && \
-  echo '1. Docker:' && (docker --version 2>/dev/null && echo '✅ OK' || echo '❌ FAIL') && \
-  echo '2. Python:' && (python3 --version 2>/dev/null && echo '✅ OK' || echo '❌ FAIL') && \
-  echo '3. Qiskit:' && (python3 -c 'import qiskit; print(f\"✅ {qiskit.__version__}\")' 2>/dev/null || echo '❌ FAIL') && \
-  echo '4. EBS Mount:' && (mount | grep /mnt/data && echo '✅ OK' || echo '❌ FAIL') && \
-  echo '5. Git Repo:' && (ls /mnt/data/QCBM-LSTM && echo '✅ OK' || echo '❌ FAIL')"
-```
-
-#### 🏗️ **인스턴스 타입별 특화 명령어**
-
-```bash
-# GPU 인스턴스에서 GPU 상태 확인
-ssh qcbm "nvidia-smi"  # GPU 인스턴스에서만 사용 가능
-
-# CPU 인스턴스에서 Jupyter 서비스 확인
-curl -I http://[ELASTIC_IP]:8888  # CPU 테스트 인스턴스에서 Jupyter 확인
-
-# 인스턴스 타입 확인
-ssh qcbm "curl -s http://169.254.169.254/latest/meta-data/instance-type"
-
-# 사용 가능한 서비스 포트 확인
-ssh qcbm "netstat -tlnp | grep -E ':(22|2222|8080|8888)'"
-```
-
----
-
-> 💡 **팁**: 이 명령어들은 자동화 스크립트 개발 과정에서 실제 사용된 것들입니다. 문제 해결이나 커스터마이징 시 참고하여 사용하세요.
->
-> 🔧 **오늘 해결한 주요 문제들**:
->
-> - CloudFormation bash 변수 escape 문제 (`$변수` → `$$변수`)
-> - UserData 스크립트 for loop 문제 (개별 명령어 방식으로 변경)
-> - infra 폴더 일원화 및 다중 인스턴스 타입 지원
+- **Cloud deployment**: Check `.infra/README.md`
+- **Research methods**: Open an issue
+- **Technical problems**: Contact the maintainers
