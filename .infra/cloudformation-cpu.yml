@@ -204,15 +204,15 @@ Resources:
                       DEVICE_SIZE=$(lsblk -b -n -o SIZE "$nvme_device" 2>/dev/null | head -1)
                       if [ ! -z "$DEVICE_SIZE" ]; then
                           # Convert to GB (approximately)
-                          SIZE_GB=$((DEVICE_SIZE / 1024 / 1024 / 1024))
-                          log "🔍 Found NVMe device $nvme_device with size: ${SIZE_GB}GB"
+                          device_size_gb=$((DEVICE_SIZE / 1024 / 1024 / 1024))
+                          log "🔍 Found NVMe device $nvme_device with size: $$device_size_gb GB"
                           
                           # Check if size is around our target (48-52GB range for 50GB volume)
-                          if [ "$SIZE_GB" -ge 48 ] && [ "$SIZE_GB" -le 52 ] && ! is_mounted "$nvme_device"; then
+                          if [ "$$device_size_gb" -ge 48 ] && [ "$$device_size_gb" -le 52 ] && ! is_mounted "$nvme_device"; then
                               # Double check this is not the root device
                               if ! lsblk "$nvme_device" | grep -q "/"; then
                                   EBS_DEVICE="$nvme_device"
-                                  success_log "Found EBS volume: $EBS_DEVICE (${SIZE_GB}GB)"
+                                  success_log "Found EBS volume: $EBS_DEVICE ($$device_size_gb GB)"
                                   EBS_SUCCESS=true
                                   break 2
                               fi
@@ -454,7 +454,7 @@ Resources:
           log "🐳 Attempting Docker container setup..."
           cd /mnt/data/$REPO_NAME 2>/dev/null || { log "Repository directory not found, skipping Docker build"; }
 
-          if [ -f "infra/Dockerfile" ] && docker info >/dev/null 2>&1; then
+          if [ -f ".infra/Dockerfile" ] && docker info >/dev/null 2>&1; then
               # Pre-build cleanup and space check
               log "Preparing for Docker build..."
               docker system prune -f
@@ -462,8 +462,8 @@ Resources:
               log "Available space for Docker build: $$DOCKER_SPACE KB"
               
               if [ "$$DOCKER_SPACE" -gt 2000000 ]; then
-                  log "Building Docker image with Dockerfile from infra/..."
-                  if timeout 1800 docker build -f infra/Dockerfile -t ${ProjectName}-dev .; then
+                  log "Building Docker image with Dockerfile from .infra/..."
+                  if timeout 1800 docker build -f .infra/Dockerfile -t ${ProjectName}-dev .; then
                       success_log "Docker image built successfully"
                       
                       # Run container
@@ -491,7 +491,7 @@ Resources:
                   log "Host-only Jupyter environment is available"
               fi
           else
-              log "Docker setup skipped (no infra/Dockerfile or Docker not available)"
+              log "Docker setup skipped (no .infra/Dockerfile or Docker not available)"
           fi
 
           # Final status

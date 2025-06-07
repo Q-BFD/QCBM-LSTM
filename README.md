@@ -1,141 +1,66 @@
-# QCBM-LSTM: Quantum Circuit Born Machine with LSTM Architecture
+# QCBM-LSTM
 
-A quantum machine learning project implementing Quantum Circuit Born Machine (QCBM) enhanced with Long Short-Term Memory (LSTM) networks for advanced pattern recognition and generation tasks.
+> Quantum Circuit Born Machine(QCBM)-과 Long Short-Term Memory(LSTM) 를 결합한 **하이브리드 양자-클래식** 모델 연구 프로젝트입니다.
 
-## 🚀 Quick Start - Cloud Development Environment
+---
 
-Deploy a complete AWS development environment in 3 simple steps:
+## 🔬 연구자(Regular User) 빠른 시작
 
-### 1. Deploy Infrastructure (5 minutes)
+1️⃣ **EC2 개발 환경 자동 배포**
 
 ```bash
-# Deploy with project name
-./deploy-cpu.sh qcbm
-
-# Or with custom name
-./deploy-cpu.sh myproject
+./deploy-cpu.sh qcbm          # 프로젝트 이름은 자유롭게 지정 가능
 ```
 
-### 2. Setup SSH Access
+2️⃣ **SSH 설정**
 
 ```bash
-# Setup SSH configuration
-./setup-ssh.sh qcbm
+./setup-ssh.sh qcbm           # 30초 이내
 ```
 
-### 3. Connect & Develop
+3️⃣ **접속 & 개발**
 
 ```bash
-# SSH to EC2 instance
-ssh qcbm
-
-# SSH to Docker container (recommended for development)
-ssh qcbm-container
+ssh qcbm-container            # Docker 컨테이너 내부 셸
 ```
 
-### 4. Access Web Interfaces
+| 서비스       | 주소 / 명령                          | 용도           |
+| ------------ | ------------------------------------ | -------------- |
+| Jupyter      | http://<EIP>:8888 (token :qcbmtoken) | 노트북 실행    |
+| VSCode Web   | http://<EIP>:8080                    | 브라우저 IDE   |
+| EC2 SSH      | `ssh qcbm`                           | 서버 관리      |
+| 컨테이너 SSH | `ssh qcbm-container`                 | 코드 작성·실험 |
 
-- **Jupyter Notebook**: `http://YOUR_ELASTIC_IP:8888` (token: `qcbmtoken`)
-- **VSCode Web**: `http://YOUR_ELASTIC_IP:8080`
+> ⏱ 설치 5-8분 소요, 비용 ≈ $0.09/시간 (t3.large + 50 GB EBS)
 
-## 💰 Cost Information
-
-- **t3.large CPU instance**: ~$0.09/hour (~$65/month)
-- **50GB EBS storage**: ~$5/month
-- **Elastic IP**: Free when attached to running instance
-
-## 🔧 Local Development
-
-For local development without cloud infrastructure:
+### 💻 로컬 실행 (선택 사항)
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run Jupyter locally
-jupyter notebook
+jupyter notebook               # 로컬 노트북
 ```
 
-## 📊 Project Structure
+### 📁 프로젝트 구조
 
 ```
 QCBM-LSTM/
-├── deploy-cpu.sh           # Quick cloud deployment
-├── setup-ssh.sh           # SSH configuration setup
-├── .infra/                 # Infrastructure automation (hidden - ignore this!)
-│   ├── cloudformation-cpu.yml
-│   ├── deploy-cpu.sh
-│   ├── setup_ssh_config.sh
-│   └── Dockerfile
-├── src/                    # Source code
-├── notebooks/              # Jupyter notebooks
-├── requirements.txt        # Python dependencies
-└── README.md              # This file
+├── src/ , notebooks/          # 연구 코드·노트북
+├── data/ , results/           # 데이터셋·출력
+├── deploy-cpu.sh              # 원클릭 배포 래퍼
+├── setup-ssh.sh               # SSH 설정 래퍼
+└── .infra/                    # 인프라 자동화 (무시해도 됨)
 ```
 
-## 🧠 QCBM Architecture
+> 💡 **Tip** : 사용하지 않을 때 EC2 인스턴스를 중지하면 비용을 절감할 수 있습니다.
 
-The Quantum Circuit Born Machine (QCBM) is implemented with:
+---
 
-- **Variational Quantum Circuits**: Parameterized quantum circuits for data representation
-- **LSTM Enhancement**: Classical LSTM networks for temporal pattern recognition
-- **Hybrid Training**: Combined quantum-classical optimization
-- **Efficient Sampling**: Born machine approach for probabilistic data generation
+## 🛠 개발자 문서
 
-## 📚 Research Background
+인프라를 수정해야 할 경우 **`.infra/README.md`** 를 참고하세요.
 
-This project explores the intersection of:
+---
 
-- Quantum machine learning
-- Generative modeling
-- Temporal sequence modeling
-- Variational quantum algorithms
+## 라이선스
 
-## 🔬 Features
-
-- ✅ Quantum circuit implementation with Qiskit
-- ✅ LSTM integration for sequence modeling
-- ✅ Hybrid quantum-classical training
-- ✅ Born machine sampling techniques
-- ✅ Comprehensive evaluation metrics
-- ✅ Cloud development environment
-- ✅ Jupyter notebook examples
-
-## 🚀 Getting Started with Research
-
-1. **Deploy cloud environment**: `./deploy-cpu.sh qcbm`
-2. **Setup SSH**: `./setup-ssh.sh qcbm`
-3. **Connect**: `ssh qcbm-container`
-4. **Run notebooks**: Access Jupyter at `http://YOUR_IP:8888`
-5. **Experiment**: Modify parameters and observe results
-
-## 📝 Requirements
-
-- Python 3.8+
-- Qiskit ≥ 1.0.0
-- PyTorch ≥ 2.0.0
-- NumPy, Matplotlib, Jupyter
-- AWS CLI (for cloud deployment)
-
-## 🌟 Advanced Features
-
-- **GPU Support**: Request AWS GPU quota for accelerated training
-- **Distributed Training**: Multi-node quantum circuit simulation
-- **Custom Datasets**: Easy integration with your data
-- **Model Persistence**: Automatic model saving and loading
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📞 Support
-
-For questions about:
-
-- **Cloud deployment**: Check `.infra/README.md`
-- **Research methods**: Open an issue
-- **Technical problems**: Contact the maintainers
+MIT

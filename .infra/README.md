@@ -1,159 +1,81 @@
-# 🚀 Infrastructure Automation (Hidden Directory)
+# .infra – 개발자 문서
 
-이 숨김 폴더(`.infra/`)는 AWS 인프라 자동화를 담당합니다.
-일반 사용자는 이 폴더를 직접 사용할 필요가 없습니다.
+> 이 폴더는 **AWS 인프라 자동화** 파일을 모아 둔 내부용 디렉터리입니다. 일반 연구자는 건드릴 필요 없습니다.
 
-## 📦 지원 프로젝트
+---
 
-- **QCBM**: `./deploy-cpu.sh qcbm`
-- **기타 프로젝트**: `./deploy-cpu.sh myproject`
-
-## 🛠️ 사용법 (고급 사용자)
-
-### 1. CPU 테스트 인스턴스 배포
-
-```bash
-cd .infra/
-
-# 특정 프로젝트로 배포
-./deploy-cpu.sh qcbm        # QCBM 프로젝트
-./deploy-cpu.sh myproject   # 다른 프로젝트
-
-# 기본값으로 배포 (qcbm)
-./deploy-cpu.sh
-```
-
-### 2. SSH 설정
-
-```bash
-# 동일한 프로젝트명으로 SSH 설정
-./setup_ssh_config.sh qcbm
-./setup_ssh_config.sh myproject
-
-# 기본값으로 설정
-./setup_ssh_config.sh
-```
-
-### 3. 접속
-
-```bash
-# EC2 인스턴스
-ssh qcbm
-ssh myproject
-
-# Docker 컨테이너
-ssh qcbm-container
-ssh myproject-container
-```
-
-## 📋 생성되는 리소스
-
-각 프로젝트별로 다음 리소스가 생성됩니다:
-
-- **CloudFormation Stack**: `{PROJECT_NAME}-dev-cpu`
-- **EC2 Instance**: `{PROJECT_NAME}-DevInstance-CPU`
-- **Security Group**: `{PROJECT_NAME}-SecurityGroup`
-- **EBS Volume**: `{PROJECT_NAME}-DataVolume-CPU`
-- **Elastic IP**: `{PROJECT_NAME}-ElasticIP`
-- **SSH Key Pair**: `{PROJECT_NAME}-dev-key`
-
-## 🌐 서비스 접속
-
-### Jupyter Notebook
+## 📁 폴더 구성
 
 ```
-http://YOUR_ELASTIC_IP:8888
-Token: {PROJECT_NAME}token
-```
-
-### VSCode Web (Docker 컨테이너)
-
-```
-http://YOUR_ELASTIC_IP:8080
-```
-
-## 🔧 파일 구조
-
-```
-.infra/                      # 숨김 폴더 (사용자는 무시)
-├── cloudformation-cpu.yml    # CPU 인스턴스 템플릿
-├── deploy-cpu.sh            # 배포 스크립트
+.infra/
+├── cloudformation-cpu.yml   # CPU 스택 + UserData
+├── cloudformation-ondemand.yml / spot.yml
+├── deploy-cpu.sh            # 로우레벨 배포 스크립트
 ├── setup_ssh_config.sh      # SSH 설정 스크립트
-├── Dockerfile              # Docker 빌드 파일
-└── README.md               # 이 파일
+├── Dockerfile               # 개발 컨테이너 이미지
+└── README.md                # (현재 문서)
 ```
 
-## 📊 비용 정보
+## ⚡ 빠른 명령어 모음
 
-- **t3.large**: ~$0.09/hour (~$65/month)
-- **50GB EBS**: ~$5/month
-- **Elastic IP**: $0 (인스턴스 연결 시)
+| 작업               | 명령                                                                                 | 설명               |
+| ------------------ | ------------------------------------------------------------------------------------ | ------------------ |
+| 템플릿 문법 검사   | `aws cloudformation validate-template --template-body file://cloudformation-cpu.yml` | CFN 구문 오류 체크 |
+| 스택 배포/업데이트 | ```bash                                                                              |
 
-## 🚀 GPU 업그레이드 경로
+aws cloudformation deploy \
+ --template-file cloudformation-cpu.yml \
+ --stack-name test-dev-cpu \
+ --parameter-overrides ProjectName=test KeyName=test-dev-key VolumeSize=50 \
+ GitRepository=https://github.com/Q-BFD/QCBM-LSTM.git GitBranch=automation \
+ --capabilities CAPABILITY_NAMED_IAM
 
-1. CPU 환경에서 테스트 완료
-2. AWS 콘솔 → Service Quotas → EC2
-3. "Running On-Demand G instances" → 8 vCPU 요청
-4. 승인 후 GPU 인스턴스 배포
+````| 래퍼 스크립트 없이 직접 배포 |
+| 스택 이벤트 확인 | `aws cloudformation describe-stack-events --stack-name test-dev-cpu --output table` | 진행 상황 실시간 확인 |
+| 스택 삭제 | `aws cloudformation delete-stack --stack-name test-dev-cpu` | 롤백/정리 |
 
-## ⚡ 일반 사용자용 (권장)
+> ☝️ **팁**: `--no-fail-on-empty-changeset` 옵션을 넣으면 변경 사항이 없을 때도 명령이 실패하지 않습니다.
 
-프로젝트 루트에서 간단하게 실행:
+## 🛠 UserData 수정 시 주의
+1. **변수 이스케이프**
+   CloudFormation `Fn::Sub` 안에서는 `${VAR}` 를 CF 매크로로 인식합니다.
+   Bash 변수는 **`$$VAR`** (또는 `$$var_name`) 형태로 써야 CF가 무시합니다.
+2. 파일 크기가 커지면 IDE 에서 yaml 들여쓰기 깨지기 쉬우므로 VSCode *YAML* 플러그인 권장.
+3. long-running 명령은 `timeout 1800 cmd` 형태로 래핑해 스택이 영구 대기하지 않도록 합니다.
 
+## 🐞 디버깅 체크리스트
+- **cloud-init**  상태 확인
+  `sudo cloud-init status --long`
+- UserData 전체 로그
+  `sudo cat /var/log/cloud-init-output.log`
+- **EBS 볼륨** 연결 확인
+  `lsblk` / `df -h /mnt/data`
+- **Docker 빌드 로그**
+  `/var/log/${ProjectName}-setup.log` 에 `Docker image built successfully` 있는지 확인
+- 설치 용량 부족 시
+  `docker system prune -f` / `apt autoremove -y`
+
+## 🧪 로컬 Docker 빌드 테스트
 ```bash
-# 1. 배포 (프로젝트 루트에서)
-./deploy-cpu.sh myproject
+# 프로젝트 루트에서 실행
+DOCKER_BUILDKIT=1 docker build -f .infra/Dockerfile -t qcbm-dev-test .
+````
 
-# 2. SSH 설정 (프로젝트 루트에서)
-./setup-ssh.sh myproject
+## 🔗 추가 학습 자료 (원래 README 개발자 참고)
 
-# 3. 접속 테스트
-ssh myproject
+- **AWS CLI 자주 쓰는 명령**
+  - 현재 IAM/계정 확인 : `aws sts get-caller-identity`
+  - KeyPair 목록 : `aws ec2 describe-key-pairs --output table`
+  - S3 폴더 동기 : `aws s3 sync ./data s3://my-bucket/data`
+- **CloudFormation 디버깅 팁**
+  - 생성 실패 리소스만 보기  
+     `aws cloudformation describe-stack-events --stack-name $STACK \
+--query 'StackEvents[?ResourceStatus==\`CREATE_FAILED\`].[LogicalResourceId,ResourceStatusReason]' --output table`
+  - 템플릿 내부 변수 레퍼런스 검사 (bash → CF 충돌)  
+    `grep -n "\$[A-Z_][A-Z0-9_]*" cloudformation-cpu.yml | grep -v "\$\$"`
+- **EC2 상태 확인 원라이너**
+  ```bash
+  ssh test "echo '=== Disk ==='; df -h; echo '=== Docker ==='; docker ps -a"
+  ```
 
-# 4. Jupyter 접속
-# http://YOUR_ELASTIC_IP:8888 (token: myprojecttoken)
-```
-
-## ⚡ 고급 사용자용 (직접 실행)
-
-```bash
-# 1. 배포
-cd .infra && ./deploy-cpu.sh myproject
-
-# 2. SSH 설정 (3-5분 후)
-./setup_ssh_config.sh myproject
-
-# 3. 접속 테스트
-ssh myproject
-
-# 4. Jupyter 접속
-# http://YOUR_ELASTIC_IP:8888 (token: myprojecttoken)
-```
-
-## 🔍 문제 해결
-
-### 로그 확인
-
-```bash
-ssh myproject 'tail -f /var/log/myproject-setup.log'
-```
-
-### EBS 볼륨 확인
-
-```bash
-ssh myproject 'df -h /mnt/data'
-```
-
-### Docker 컨테이너 상태
-
-```bash
-ssh myproject 'docker ps'
-```
-
-## 📝 커스터마이징
-
-각 프로젝트의 요구사항에 맞게 다음을 수정할 수 있습니다:
-
-- **cloudformation-cpu.yml**: 인스턴스 타입, 볼륨 크기
-- **deploy-cpu.sh**: Git 리포지토리, 브랜치
-- **requirements.txt**: Python 패키지 (각 프로젝트 저장소에서)
+문의: 슬랙 #infra 또는 GitHub Issues.
