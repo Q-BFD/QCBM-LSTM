@@ -20,7 +20,7 @@ VOLUME_SIZE="${VOLUME_SIZE:-50}"
 GIT_REPO="${GIT_REPO:-https://github.com/Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
 
-echo "==== setup_full.sh 시작 ====" | tee -a /var/log/${ProjectName}-setup.log
+echo "==== setup_full.sh 시작 ====" | tee -a /var/log/${PROJECT_NAME}-setup.log
 
 # Remove strict error handling to prevent early exit
 # set -e  # Commented out to continue on errors
@@ -28,27 +28,27 @@ echo "==== setup_full.sh 시작 ====" | tee -a /var/log/${ProjectName}-setup.log
 # Enhanced logging function
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/$
-    {ProjectName}-setup.log
+    {PROJECT_NAME}-setup.log
 }
 
 error_log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a /var/
-    log/${ProjectName}-setup.log
+    log/${PROJECT_NAME}-setup.log
 }
 
 success_log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a /var/
-    log/${ProjectName}-setup.log
+    log/${PROJECT_NAME}-setup.log
 }
 
-log "🚀 Starting ${ProjectName} development environment setup..."
+log "🚀 Starting ${PROJECT_NAME} development environment setup..."
 log "🧪 Instance Type: ${InstanceType} (CPU Testing)"
 log "📂 Git Repository: ${GitRepository}"
 log "🌿 Git Branch: ${GitBranch}"
 
 # Check initial disk space
 log "💾 Checking initial disk space..."
-df -h | tee -a /var/log/${ProjectName}-setup.log
+df -h | tee -a /var/log/${PROJECT_NAME}-setup.log
 
 # Update system with retry logic
 log "📦 Updating system packages..."
@@ -89,7 +89,7 @@ tools failed"
 
 # Check disk space after package installation
 log "💾 Checking disk space after package installation..."
-df -h | tee -a /var/log/${ProjectName}-setup.log
+df -h | tee -a /var/log/${PROJECT_NAME}-setup.log
 
 # =============================
 # ENHANCED EBS VOLUME DETECTION AND MOUNTING
@@ -120,7 +120,7 @@ for attempt in {1..60}; do
     
     # Show current block devices for debugging
     log "📊 Current block devices:"
-    lsblk | tee -a /var/log/${ProjectName}-setup.log
+    lsblk | tee -a /var/log/${PROJECT_NAME}-setup.log
     
     # Strategy 1: Look for NVMe devices with size around 50GB
     for nvme_device in /dev/nvme*n1; do
@@ -326,7 +326,7 @@ if [ "$MOUNT_OK" = true ]; then
     cd /mnt/data/$REPO_NAME
     if [ -f "requirements.txt" ]; then
         log "Requirements file found in repository:"
-        head -10 requirements.txt | tee -a /var/log/${ProjectName}-setup.
+        head -10 requirements.txt | tee -a /var/log/${PROJECT_NAME}-setup.
         log
         success_log "Using repository requirements.txt"
     else
@@ -404,7 +404,7 @@ if [ "$MOUNT_OK" = true ]; then
             --port=8888 \
             --no-browser \
             --notebook-dir=/mnt/data/$REPO_NAME \
-            --NotebookApp.token=${ProjectName}token \
+            --NotebookApp.token=${PROJECT_NAME}token \
             --NotebookApp.password='' \
             --allow-root \
             > /var/log/jupyter.log 2>&1 &
@@ -417,11 +417,11 @@ if [ "$MOUNT_OK" = true ]; then
     log "🐳 Docker installed but will be configured after EBS mount"
 
     # Final status
-    echo "${ProjectName} development environment setup completed at $
+    echo "${PROJECT_NAME} development environment setup completed at $
     (date)" > /mnt/data/$REPO_NAME/setup-complete.txt 2>/dev/null || 
     echo "Setup completed" > /tmp/setup-complete.txt
 
-    log "🎉 ${ProjectName} development environment setup completed!"
+    log "🎉 ${PROJECT_NAME} development environment setup completed!"
     log "🧪 CPU Test Instance setup finished"
     log "📋 Available services:"
 
@@ -429,9 +429,9 @@ if [ "$MOUNT_OK" = true ]; then
     PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/
     public-ipv4 2>/dev/null || echo "CHECK_AWS_CONSOLE")
     log "   - Jupyter Notebook: http://$$PUBLIC_IP:8888 (token: $
-    {ProjectName}token)"
+    {PROJECT_NAME}token)"
 
-    if docker ps | grep -q ${ProjectName}-dev; then
+    if docker ps | grep -q ${PROJECT_NAME}-dev; then
         log "   - VSCode Web: http://$$PUBLIC_IP:8080"
         log "   - SSH to container: ssh devuser@$$PUBLIC_IP -p 2222"
     fi
@@ -442,7 +442,7 @@ if [ "$MOUNT_OK" = true ]; then
 
     # Final disk space check
     log "💾 Final disk space usage:"
-    df -h | tee -a /var/log/${ProjectName}-setup.log
+    df -h | tee -a /var/log/${PROJECT_NAME}-setup.log
 
     success_log "Setup script completed successfully!"
 else
