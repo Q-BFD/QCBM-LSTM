@@ -9,7 +9,6 @@ os.chdir(current_dir)
 
 import json
 from pathlib import Path
-import cloudpickle
 
 import pandas as pd
 import numpy as np
