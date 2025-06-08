@@ -72,13 +72,45 @@ VOLUME_SIZE="${VOLUME_SIZE:-50}"
 GIT_REPO="${GIT_REPO:-https://github.com/Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
 
-log "==== setup_full.sh 시작 ===="
-log "🚀 Checking for SSH keys..."
-if [ -z "${SSH_PRIVATE_KEY}" ] || [ -z "${SSH_PUBLIC_KEY}" ]; then
-    error_log "SSH keys are not provided. Please provide BOTH --ssh-private-key and --ssh-public-key arguments, or set them as environment variables."
+# --- SSH 키 처리 로직 ---
+log "🚀 SSH 키를 처리합니다..."
+
+# 환경 변수 이름의 대소문자 차이를 보완합니다.
+if [ -z "${SSH_PRIVATE_KEY}" ] && [ -n "${SSHPrivateKey}" ]; then
+    log "환경 변수 'SSHPrivateKey'에서 개인 키를 찾았습니다. 'SSH_PRIVATE_KEY'로 사용합니다."
+    SSH_PRIVATE_KEY="${SSHPrivateKey}"
+fi
+
+if [ -z "${SSH_PRIVATE_KEY}" ]; then
+    error_log "SSH 개인 키가 없습니다. --ssh-private-key 인자 또는 SSH_PRIVATE_KEY/SSHPrivateKey 환경 변수로 전달해주세요."
     exit 1
 fi
-success_log "SSH keys found."
+success_log "SSH 개인 키를 성공적으로 로드했습니다."
+
+log "🔏 제공된 개인 키에서 공개 키를 생성합니다..."
+PRIVATE_KEY_FILE=$(mktemp)
+echo -e "${SSH_PRIVATE_KEY}" > "${PRIVATE_KEY_FILE}"
+chmod 600 "${PRIVATE_KEY_FILE}"
+
+# ssh-keygen이 없으면 설치합니다. (openssh-server 패키지에 보통 포함됨)
+if ! command -v ssh-keygen &> /dev/null; then
+    log "ssh-keygen을 찾을 수 없어 openssh-client를 설치합니다..."
+    apt-get update -qq && apt-get install -y -qq openssh-client
+fi
+
+# 공개 키를 생성합니다.
+GENERATED_PUBLIC_KEY=$(ssh-keygen -y -f "${PRIVATE_KEY_FILE}")
+rm -f "${PRIVATE_KEY_FILE}" # 임시 파일 삭제
+
+if [ -z "${GENERATED_PUBLIC_KEY}" ]; then
+    error_log "개인 키로부터 공개 키를 생성하는 데 실패했습니다. 개인 키가 유효한지 확인해주세요."
+    exit 1
+fi
+SSH_PUBLIC_KEY="${GENERATED_PUBLIC_KEY}"
+success_log "SSH 공개 키를 성공적으로 생성했습니다."
+
+
+log "==== setup_full.sh 시작 ===="
 log "🚀 Starting ${PROJECT_NAME} development environment setup..."
 log "🧪 Instance Type: ${INSTANCE_TYPE} (CPU Testing)"
 log "📂 Git Repository: ${GIT_REPO}"
