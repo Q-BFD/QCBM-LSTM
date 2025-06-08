@@ -25,11 +25,11 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --ssh-public-key)
-            SSHPublicKey="$2"
+            SSH_PUBLIC_KEY="$2"
             shift 2
             ;;
         --ssh-private-key)
-            SSHPrivateKey="$2"
+            SSH_PRIVATE_KEY="$2"
             shift 2
             ;;
         *)
@@ -58,8 +58,8 @@ success_log() {
 
 log "==== setup_full.sh 시작 ===="
 log "🚀 Checking for SSH keys..."
-if [ -z "${SSHPrivateKey}" ] || [ -z "${SSHPublicKey}" ]; then
-    error_log "SSH keys are not provided. Please provide BOTH --ssh-private-key and --ssh-public-key."
+if [ -z "${SSH_PRIVATE_KEY}" ] || [ -z "${SSH_PUBLIC_KEY}" ]; then
+    error_log "SSH keys are not provided. Please provide BOTH --ssh-private-key and --ssh-public-key arguments, or set them as environment variables."
     exit 1
 fi
 success_log "SSH keys found."
@@ -320,8 +320,8 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 8080:8080 \
             -p 2222:22 \
             -v "/mnt/data/${REPO_NAME}:/workspace" \
-            -e "SSH_PUBLIC_KEY=${SSHPublicKey}" \
-            -e "SSH_PRIVATE_KEY=${SSHPrivateKey}" \
+            -e "SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}" \
+            -e "SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then
             success_log "Docker container started successfully"
