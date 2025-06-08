@@ -1,6 +1,34 @@
 #!/bin/bash
 set -e
 
+# 로깅을 위해 프로젝트 이름을 미리 파싱합니다.
+PROJECT_NAME_ARG=$(echo "$@" | grep -oP '(?<=--project\s)\S+')
+PROJECT_NAME="${PROJECT_NAME_ARG:-qcbm}"
+LOG_FILE="/var/log/${PROJECT_NAME}-setup.log"
+
+# 로깅 함수 정의
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
+}
+
+error_log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a "${LOG_FILE}"
+}
+
+success_log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a "${LOG_FILE}"
+}
+
+# --- 디버깅: EC2 사용자 데이터 컨텍스트 로깅 ---
+log "==== 스크립트 실행 컨텍스트 디버깅 시작 ===="
+log "수신된 인자 개수: $#"
+log "모든 인자 (\$*): $*"
+log "모든 인자 (\$@): $@"
+log "--- 전체 환경 변수 목록 ---"
+env | tee -a "${LOG_FILE}"
+log "--- 디버깅 종료 ---"
+
+
 # --- 인자 파싱 ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,18 +72,6 @@ VOLUME_SIZE="${VOLUME_SIZE:-50}"
 GIT_REPO="${GIT_REPO:-https://github.com/Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "/var/log/${PROJECT_NAME}-setup.log"
-}
-
-error_log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" | tee -a "/var/log/${PROJECT_NAME}-setup.log"
-}
-
-success_log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a "/var/log/${PROJECT_NAME}-setup.log"
-}
-
 log "==== setup_full.sh 시작 ===="
 log "🚀 Checking for SSH keys..."
 if [ -z "${SSH_PRIVATE_KEY}" ] || [ -z "${SSH_PUBLIC_KEY}" ]; then
@@ -68,7 +84,7 @@ log "🧪 Instance Type: ${INSTANCE_TYPE} (CPU Testing)"
 log "📂 Git Repository: ${GIT_REPO}"
 log "🌿 Git Branch: ${GIT_BRANCH}"
 log "💾 Checking initial disk space..."
-df -h | tee -a "/var/log/${PROJECT_NAME}-setup.log"
+df -h | tee -a "${LOG_FILE}"
 
 log "📦 Updating system packages..."
 for i in {1..3}; do
@@ -94,7 +110,7 @@ log "Installing basic tools..."
 apt install -y curl wget unzip nodejs openssh-server jq htop vim nano && success_log "Basic tools installed" || error_log "Some basic tools failed"
 
 log "💾 Checking disk space after package installation..."
-df -h | tee -a "/var/log/${PROJECT_NAME}-setup.log"
+df -h | tee -a "${LOG_FILE}"
 
 log "💾 Starting enhanced EBS volume detection..."
 get_block_devices() {
@@ -113,7 +129,7 @@ log "🔍 Strategy 1: Looking for NVMe devices around ${VOLUME_SIZE}GB..."
 for attempt in {1..60}; do
     log "⏳ Attempt ${attempt}/60: Scanning for EBS volume..."
     log "📊 Current block devices:"
-    lsblk | tee -a "/var/log/${PROJECT_NAME}-setup.log"
+    lsblk | tee -a "${LOG_FILE}"
     
     for nvme_device in /dev/nvme*n1; do
         if [ -e "${nvme_device}" ]; then
@@ -332,7 +348,7 @@ if [ "${MOUNT_OK}" = true ]; then
             log "   - JupyterLab: http://${PUBLIC_IP}:8888 (token: qcbmtoken)"
             log "   - SSH 접속: ssh -p 2222 devuser@${PUBLIC_IP}"
             log "💾 Final disk space usage:"
-            df -h | tee -a "/var/log/${PROJECT_NAME}-setup.log"
+            df -h | tee -a "${LOG_FILE}"
             success_log "Setup script completed successfully!"
         else
             error_log "Failed to start Docker container"
