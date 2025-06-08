@@ -15,9 +15,40 @@ KEY_NAME="qb-frontier-global-key"
 SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"
 VOLUME_SIZE="50"  # Smaller storage for testing
 
-# Git repository configuration
-GIT_REPOSITORY="https://github.com/Q-BFD/QCBM-LSTM.git"
-GIT_BRANCH="automation"
+# --- Git Repository Configuration ---
+# Try to dynamically detect the Git repository URL and branch from the current directory
+if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    # Detect remote URL
+    GIT_REMOTE_URL=$(git config --get remote.origin.url)
+    
+    # If the URL is HTTPS, convert it to SSH format for consistency
+    if [[ "${GIT_REMOTE_URL}" == https://* ]]; then
+        echo "🔄 Converting detected HTTPS remote to SSH format..."
+        GIT_REMOTE_URL=$(echo "${GIT_REMOTE_URL}" | sed -E 's|https://([^/]+)/|git@\1:|')
+    fi
+
+    if [ -n "$GIT_REMOTE_URL" ]; then
+        echo "✅ Dynamically detected Git repository: $GIT_REMOTE_URL"
+        GIT_REPOSITORY="$GIT_REMOTE_URL"
+    else
+        echo "⚠️  Could not detect git remote 'origin'. Using default repository."
+        GIT_REPOSITORY="git@github.com:Q-BFD/QCBM-LSTM.git"
+    fi
+
+    # Detect current branch and set it as default
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ -n "$CURRENT_BRANCH" ]; then
+        echo "✅ Dynamically detected Git branch: $CURRENT_BRANCH"
+        GIT_BRANCH="$CURRENT_BRANCH"
+    else
+        echo "⚠️  Could not detect current branch. Using default 'automation'."
+        GIT_BRANCH="automation"
+    fi
+else
+    echo "⚠️  Not inside a Git repository. Using default repository and branch."
+    GIT_REPOSITORY="git@github.com:Q-BFD/QCBM-LSTM.git"
+    GIT_BRANCH="automation"
+fi
 
 # Parse setup script information from Git repository
 SETUP_SCRIPT_PATH=".infra/setup_full.sh"

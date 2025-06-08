@@ -60,6 +60,14 @@ while [[ $# -gt 0 ]]; do
             SSH_PRIVATE_KEY="$2"
             shift 2
             ;;
+        --git-user-name)
+            GIT_USER_NAME="$2"
+            shift 2
+            ;;
+        --git-user-email)
+            GIT_USER_EMAIL="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
@@ -69,11 +77,21 @@ done
 PROJECT_NAME="${PROJECT_NAME:-qcbm}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-t3.large}"
 VOLUME_SIZE="${VOLUME_SIZE:-50}"
-GIT_REPO="${GIT_REPO:-https://github.com/Q-BFD/QCBM-LSTM.git}"
+GIT_REPO="${GIT_REPO:-git@github.com:Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
+GIT_USER_NAME="${GIT_USER_NAME:-qb-frontier}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-qb-frontier@users.noreply.github.com}"
+
+# --- SSH URL 변환: HTTPS 주소를 SSH 주소로 변경 ---
+if [[ "${GIT_REPO}" == https://* ]]; then
+    log "HTTPS Git URL을 SSH 형식으로 변환합니다: ${GIT_REPO}"
+    GIT_REPO_SSH=$(echo "${GIT_REPO}" | sed -E 's|https://([^/]+)/|git@\1:|')
+    log "변환된 SSH URL: ${GIT_REPO_SSH}"
+    GIT_REPO="${GIT_REPO_SSH}"
+fi
 
 # --- SSH 키 처리 로직 ---
-log "🚀 SSH 키를 처리합니다..."
+log "🔏 SSH 키를 처리합니다..."
 
 # 환경 변수 이름의 대소문자 차이를 보완합니다.
 if [ -z "${SSH_PRIVATE_KEY}" ] && [ -n "${SSHPrivateKey}" ]; then
@@ -370,6 +388,9 @@ if [ "${MOUNT_OK}" = true ]; then
             -v "/mnt/data/${REPO_NAME}:/workspace" \
             -e "SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}" \
             -e "SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}" \
+            -e "JUPYTER_TOKEN=qcbmtoken" \
+            -e "GIT_USER_NAME=${GIT_USER_NAME}" \
+            -e "GIT_USER_EMAIL=${GIT_USER_EMAIL}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then
             success_log "Docker container started successfully"

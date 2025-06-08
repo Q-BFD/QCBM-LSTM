@@ -145,7 +145,7 @@ Host ${ALIAS_NAME}
 # ${PROJECT_NAME} Development Environment - Docker Container
 Host ${ALIAS_NAME}-container
     HostName ${EIP}
-    User devuser
+    User qb-frontier
     Port 2222
     IdentityFile ${PRIMARY_SSH_KEY}
     IdentitiesOnly yes
