@@ -24,6 +24,14 @@ while [[ $# -gt 0 ]]; do
             GIT_BRANCH="$2"
             shift 2
             ;;
+        --ssh-public-key)
+            SSHPublicKey="$2"
+            shift 2
+            ;;
+        --ssh-private-key)
+            SSHPrivateKey="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
@@ -49,6 +57,12 @@ success_log() {
 }
 
 log "==== setup_full.sh 시작 ===="
+log "🚀 Checking for SSH keys..."
+if [ -z "${SSHPrivateKey}" ] || [ -z "${SSHPublicKey}" ]; then
+    error_log "SSH keys are not provided. Please provide BOTH --ssh-private-key and --ssh-public-key."
+    exit 1
+fi
+success_log "SSH keys found."
 log "🚀 Starting ${PROJECT_NAME} development environment setup..."
 log "🧪 Instance Type: ${INSTANCE_TYPE} (CPU Testing)"
 log "📂 Git Repository: ${GIT_REPO}"

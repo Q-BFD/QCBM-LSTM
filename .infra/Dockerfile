@@ -18,17 +18,17 @@ RUN apt-get update && apt-get install -y \
 
 # SSH 서버 설정
 RUN mkdir /var/run/sshd && \
-    echo 'PermitRootLogin no' >> /etc/ssh/sshd_config && \
-    echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config && \
-    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config && \
-    echo 'AuthorizedKeysFile %h/.ssh/authorized_keys' >> /etc/ssh/sshd_config
+    sed -ri 's/^#?PermitRootLogin\s+.*/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?PasswordAuthentication\s+.*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?PubkeyAuthentication\s+.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -ri 's,^#?AuthorizedKeysFile.*,AuthorizedKeysFile /home/qb-frontier/.ssh/authorized_keys,' /etc/ssh/sshd_config
 
 # 개발자 사용자 생성
-RUN useradd -m -s /bin/bash devuser && \
-    echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
-    mkdir -p /home/devuser/.ssh && \
-    chmod 700 /home/devuser/.ssh && \
-    chown -R devuser:devuser /home/devuser/.ssh
+RUN useradd -m -s /bin/bash qb-frontier && \
+    echo "qb-frontier ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    mkdir -p /home/qb-frontier/.ssh && \
+    chmod 700 /home/qb-frontier/.ssh && \
+    chown -R qb-frontier:qb-frontier /home/qb-frontier/.ssh
 
 # 작업 디렉토리 설정
 WORKDIR /workspace
