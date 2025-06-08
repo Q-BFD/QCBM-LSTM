@@ -11,6 +11,15 @@ RUN apt-get update && apt-get install -y \
     unzip \
     nodejs \
     npm \
+    htop \
+    vim \
+    nano \
+    tmux \
+    screen \
+    tree \
+    mc \
+    mc-data \
+    mc-data-ext \
     openssh-server \
     sudo \
     && apt-get clean \
