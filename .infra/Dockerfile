@@ -55,6 +55,19 @@ RUN pip3 install --no-cache-dir -r requirements.txt \
     notebook>=7.0.0 \
     ipywidgets>=8.0.0
 
+# Python 환경 및 Jupyter 커널 설정
+RUN python3 -m ipykernel install --name=python3 --display-name="Python 3" && \
+    # qb-frontier 사용자를 위한 Jupyter 설정 디렉토리 생성
+    mkdir -p /home/qb-frontier/.jupyter && \
+    mkdir -p /home/qb-frontier/.ipython && \
+    chown -R qb-frontier:qb-frontier /home/qb-frontier/.jupyter && \
+    chown -R qb-frontier:qb-frontier /home/qb-frontier/.ipython
+
+# Python 및 Jupyter 환경 변수 설정
+ENV PYTHONPATH=/usr/local/lib/python3.9/site-packages:/home/qb-frontier
+ENV JUPYTER_CONFIG_DIR=/home/qb-frontier/.jupyter
+ENV IPYTHONDIR=/home/qb-frontier/.ipython
+
 # JupyterLab 설정
 EXPOSE 8888 8080 22
 ENV JUPYTER_ENABLE_LAB=yes
