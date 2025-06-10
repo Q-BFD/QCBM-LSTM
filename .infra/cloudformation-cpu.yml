@@ -69,31 +69,6 @@ Parameters:
     AllowedPattern: ^[a-zA-Z0-9/_.-]+$
     ConstraintDescription: Setup script path must be a valid file path and is required
 
-Mappings:
-  # AMI mappings for x86_64 Intel architecture in ap-northeast-2 (Seoul)
-  ArchitectureMap:
-    # x86_64 Intel instance types (Ubuntu 22.04 LTS)
-    t3.medium:
-      AMI: ami-0c9c942bd7bf113a2
-    t3.large:
-      AMI: ami-0c9c942bd7bf113a2
-    t3.xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-    t3.2xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-    m5.large:
-      AMI: ami-0c9c942bd7bf113a2
-    m5.xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-    m5.2xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-    c5.large:
-      AMI: ami-0c9c942bd7bf113a2
-    c5.xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-    m7i.4xlarge:
-      AMI: ami-0c9c942bd7bf113a2
-
 Resources:
   ProjectSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -126,7 +101,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: !FindInMap [ArchitectureMap, !Ref InstanceType, AMI]
+      ImageId: ami-0c9c942bd7bf113a2
       AvailabilityZone: !Select [0, !GetAZs '']
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
