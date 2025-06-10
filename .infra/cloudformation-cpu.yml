@@ -21,6 +21,7 @@ Parameters:
       - m5.large
       - m5.xlarge
       - m5.2xlarge
+      - m7i.4xlarge
       - c5.large
       - c5.xlarge
     Description: CPU instance type for testing (no GPU quota required)
@@ -119,15 +120,28 @@ Resources:
           #!/bin/bash
           set -e
 
-          # Manually inject the public key for initial SSH access
-          mkdir -p /home/ubuntu/.ssh
-          echo '${SSHPublicKey}' >> /home/ubuntu/.ssh/authorized_keys
-          chown -R ubuntu:ubuntu /home/ubuntu/.ssh
-          chmod 700 /home/ubuntu/.ssh
-          chmod 600 /home/ubuntu/.ssh/authorized_keys
-          echo "Public key for EC2 access has been injected."
+          # Manually inject the public and private keys for initial SSH access and Git
+          SSH_DIR="/home/ubuntu/.ssh"
+          mkdir -p "${SSH_DIR}"
 
-          # Export the private key for the setup script to use
+          # Inject public key for SSH access to EC2
+          echo '${SSHPublicKey}' > "${SSH_DIR}/authorized_keys"
+
+          # Inject the same public key and private key as standard file names
+          echo '${SSHPublicKey}' > "${SSH_DIR}/id_ed25519_github_qb_frontier.pub"
+          echo '${SSHPrivateKey}' > "${SSH_DIR}/id_ed25519_github_qb_frontier"
+
+          # Set correct permissions
+          chown -R ubuntu:ubuntu "${SSH_DIR}"
+          chmod 700 "${SSH_DIR}"
+          chmod 600 "${SSH_DIR}/authorized_keys"
+          chmod 644 "${SSH_DIR}/id_ed25519_github_qb_frontier.pub"
+          chmod 600 "${SSH_DIR}/id_ed25519_github_qb_frontier"
+          echo "Public and private keys for EC2 access and Git have been injected."
+
+          # Export variables for the setup script to use.
+          # Note: The setup script will re-read these from the files for consistency.
+          export SSHPublicKey='${SSHPublicKey}'
           export SSHPrivateKey='${SSHPrivateKey}'
 
           # Construct and run the main setup script

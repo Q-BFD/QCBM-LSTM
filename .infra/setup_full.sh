@@ -82,6 +82,22 @@ GIT_BRANCH="${GIT_BRANCH:-automation}"
 GIT_USER_NAME="${GIT_USER_NAME:-qb-frontier}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-qb-frontier@users.noreply.github.com}"
 
+# --- SSH 키 로드 ---
+# CloudFormation UserData에서 이미 키를 /home/ubuntu/.ssh/에 생성했습니다.
+# 이 스크립트는 해당 키를 읽어와서 변수에 할당하고 사용하기만 합니다.
+log "🚀 Loading SSH keys from /home/ubuntu/.ssh/..."
+SSH_PRIVATE_KEY_PATH="/home/ubuntu/.ssh/id_ed25519_github_qb_frontier"
+SSH_PUBLIC_KEY_PATH="/home/ubuntu/.ssh/id_ed25519_github_qb_frontier.pub"
+
+if [ -f "$SSH_PRIVATE_KEY_PATH" ] && [ -f "$SSH_PUBLIC_KEY_PATH" ]; then
+    SSH_PRIVATE_KEY=$(cat "${SSH_PRIVATE_KEY_PATH}")
+    SSH_PUBLIC_KEY=$(cat "${SSH_PUBLIC_KEY_PATH}")
+    success_log "SSH keys successfully loaded from host files."
+else
+    error_log "SSH key files not found in /home/ubuntu/.ssh/. Check CloudFormation UserData."
+    exit 1
+fi
+
 # --- SSH URL 변환: HTTPS 주소를 SSH 주소로 변경 ---
 if [[ "${GIT_REPO}" == https://* ]]; then
     log "HTTPS Git URL을 SSH 형식으로 변환합니다: ${GIT_REPO}"
@@ -89,44 +105,6 @@ if [[ "${GIT_REPO}" == https://* ]]; then
     log "변환된 SSH URL: ${GIT_REPO_SSH}"
     GIT_REPO="${GIT_REPO_SSH}"
 fi
-
-# --- SSH 키 처리 로직 ---
-log "🔏 SSH 키를 처리합니다..."
-
-# 환경 변수 이름의 대소문자 차이를 보완합니다.
-if [ -z "${SSH_PRIVATE_KEY}" ] && [ -n "${SSHPrivateKey}" ]; then
-    log "환경 변수 'SSHPrivateKey'에서 개인 키를 찾았습니다. 'SSH_PRIVATE_KEY'로 사용합니다."
-    SSH_PRIVATE_KEY="${SSHPrivateKey}"
-fi
-
-if [ -z "${SSH_PRIVATE_KEY}" ]; then
-    error_log "SSH 개인 키가 없습니다. --ssh-private-key 인자 또는 SSH_PRIVATE_KEY/SSHPrivateKey 환경 변수로 전달해주세요."
-    exit 1
-fi
-success_log "SSH 개인 키를 성공적으로 로드했습니다."
-
-log "🔏 제공된 개인 키에서 공개 키를 생성합니다..."
-PRIVATE_KEY_FILE=$(mktemp)
-echo -e "${SSH_PRIVATE_KEY}" > "${PRIVATE_KEY_FILE}"
-chmod 600 "${PRIVATE_KEY_FILE}"
-
-# ssh-keygen이 없으면 설치합니다. (openssh-server 패키지에 보통 포함됨)
-if ! command -v ssh-keygen &> /dev/null; then
-    log "ssh-keygen을 찾을 수 없어 openssh-client를 설치합니다..."
-    apt-get update -qq && apt-get install -y -qq openssh-client
-fi
-
-# 공개 키를 생성합니다.
-GENERATED_PUBLIC_KEY=$(ssh-keygen -y -f "${PRIVATE_KEY_FILE}")
-rm -f "${PRIVATE_KEY_FILE}" # 임시 파일 삭제
-
-if [ -z "${GENERATED_PUBLIC_KEY}" ]; then
-    error_log "개인 키로부터 공개 키를 생성하는 데 실패했습니다. 개인 키가 유효한지 확인해주세요."
-    exit 1
-fi
-SSH_PUBLIC_KEY="${GENERATED_PUBLIC_KEY}"
-success_log "SSH 공개 키를 성공적으로 생성했습니다."
-
 
 log "==== setup_full.sh 시작 ===="
 log "🚀 Starting ${PROJECT_NAME} development environment setup..."
@@ -331,13 +309,21 @@ if [ "${MOUNT_OK}" = true ]; then
     log "📂 Repository name: ${REPO_NAME}"
     
     if [ ! -d "${REPO_NAME}" ]; then
+        # Use the key stored on the host for the clone operation.
+        export GIT_SSH_COMMAND="ssh -i ${SSH_PRIVATE_KEY_PATH} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+        
+        log "⏳ Attempting to clone with host key: ${SSH_PRIVATE_KEY_PATH}"
         if git clone -b "${GIT_BRANCH}" "${GIT_REPO}"; then
             success_log "Repository cloned successfully"
             chown -R ubuntu:ubuntu "${REPO_NAME}"
         else
             error_log "Failed to clone repository"
+            unset GIT_SSH_COMMAND
             exit 1
         fi
+        
+        # Unset the command after use
+        unset GIT_SSH_COMMAND
     fi
     
     cd "/mnt/data/${REPO_NAME}"

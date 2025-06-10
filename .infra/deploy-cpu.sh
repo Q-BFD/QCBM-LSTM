@@ -4,10 +4,30 @@
 # Generic CPU Instance Deployment (Testing & Development)
 # =============================
 
-# Project name from argument or default
+# --- Argument Parsing ---
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "📋 Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"
+    echo ""
+    echo "Examples:"
+    echo "   $0 qcbm          # Deploy 'qcbm' with default instance type (t3.large)"
+    echo "   $0 myproject t3.medium  # Deploy 'myproject' with t3.medium"
+    echo ""
+    echo "📦 This will create:"
+    echo "   - Stack: {PROJECT_NAME}-dev-cpu"
+    echo "   - Key Pair: {PROJECT_NAME}-dev-key"
+    echo "   - Resources tagged with project name"
+    exit 0
+fi
+
+if [ -z "$1" ]; then
+    echo "❌ Error: Project name is required."
+    echo "Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"
+    exit 1
+fi
+
 PROJECT_NAME="$1"
-INSTANCE_TYPE="${2:-t3.large}"
-[ -z "$PROJECT_NAME" ] && { echo "Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"; exit 1; }
+# Set INSTANCE_TYPE from the second argument, or default to t3.large
+INSTANCE_TYPE_PARAM="${2:-t3.large}"
 
 STACK_NAME="${PROJECT_NAME}-dev-cpu"
 # 🔑 모든 인스턴스에 사용할 고정된 키 페어 이름과 파일 경로
@@ -67,24 +87,6 @@ else
     exit 1
 fi
 
-# =============================
-# Usage Information
-# =============================
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 [PROJECT_NAME] [INSTANCE_TYPE]"
-    echo ""
-    echo "Examples:"
-    echo "   $0 qcbm          # Deploy with project name 'qcbm'"
-    echo "   $0 myproject     # Deploy with project name 'myproject'"
-    echo "   $0               # Deploy with default name 'qcbm'"
-    echo ""
-    echo "📦 This will create:"
-    echo "   - Stack: {PROJECT_NAME}-dev-cpu"
-    echo "   - Key Pair: {PROJECT_NAME}-dev-key"
-    echo "   - Resources tagged with project name"
-    exit 0
-fi
-
 echo "🎯 Project Name: $PROJECT_NAME"
 echo "📚 Stack Name: $STACK_NAME"
 
@@ -118,7 +120,7 @@ fi
 echo "🔑 Using SSH public key from: $SSH_PUBLIC_KEY_FILE_EXPANDED"
 echo "🔐 Using corresponding private key for Git operations in container"
 echo "🚀 Deploying $PROJECT_NAME CPU Test Instance CloudFormation stack: $STACK_NAME"
-echo "🧪 Instance Type: $INSTANCE_TYPE (CPU Testing - No GPU quota needed)"
+echo "🧪 Instance Type: $INSTANCE_TYPE_PARAM (CPU Testing - No GPU quota needed)"
 echo "💾 Storage: ${VOLUME_SIZE}GB EBS"
 echo "📂 Git Repository: $GIT_REPOSITORY"
 echo "🌿 Git Branch: $GIT_BRANCH"
@@ -136,7 +138,7 @@ aws cloudformation deploy \
     ProjectName="$PROJECT_NAME" \
     SSHPublicKey="$SSH_PUBLIC_KEY" \
     SSHPrivateKey="$SSH_PRIVATE_KEY" \
-    InstanceType="$INSTANCE_TYPE" \
+    InstanceType="$INSTANCE_TYPE_PARAM" \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
     GitBranch="$GIT_BRANCH" \
@@ -172,7 +174,7 @@ if [ $? -eq 0 ]; then
     echo "   📁 Dev SSH Key: $SSH_PUBLIC_KEY_FILE_EXPANDED (for container access)"
     echo ""
     echo "🧪 Testing Environment:"
-    echo "   💻 Instance: $INSTANCE_TYPE (2 vCPU, 8GB RAM)"
+    echo "   💻 Instance: $INSTANCE_TYPE_PARAM (2 vCPU, 8GB RAM)"
     echo "   💾 Storage: ${VOLUME_SIZE}GB EBS"
     echo "   🐍 Python: CPU-only PyTorch, Qiskit, Jupyter"
     echo "   📂 Repository: $GIT_REPOSITORY (branch: $GIT_BRANCH)"
