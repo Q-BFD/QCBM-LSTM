@@ -16,6 +16,7 @@ class TrainingArgs(BaseModel):
     ]
 
     prior_size: int = Field(default=100, description="Prior 모델 샘플 수")
+    num_qubits: int = Field(default=8, description="QCBM에서 사용할 큐비트 수 (4-20 권장)")
     prior_n_epochs: int = Field(default=30, description="사전 모델(QCBM/RBM) 학습 에폭 수")
     n_qcbm_layers: int = Field(default=3, description="Prior 모델 레이어 수")
     n_qcbm_shots: int = Field(default=2000, description="Prior 모델 샘플 수")

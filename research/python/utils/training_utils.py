@@ -311,7 +311,7 @@ def create_prior_model(args):
     elif args.prior_model == "QCBM":
         depth = args.n_qcbm_layers
         nshot = args.n_qcbm_shots
-        ansatz = QCBMAnsatz(args.prior_size, depth)
+        ansatz = QCBMAnsatz(args.num_qubits, depth)
         options = {
             'maxiter': args.prior_maxiter,
             'tol': args.prior_tol,
