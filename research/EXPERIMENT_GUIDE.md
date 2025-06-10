@@ -1,6 +1,6 @@
 # 실험 설정 및 실행 가이드
 
-## 📁 Settings 구조
+## 📁 프로젝트 구조
 
 ```
 research/
@@ -9,58 +9,85 @@ research/
 │   │   ├── __init__.py
 │   │   ├── training_para.py              # TrainingArgs 클래스 정의
 │   │   └── benchmark_models_settings_qcbm.json  # 기본 설정 파일
+│   ├── utils/                            # 유틸리티 함수들
 │   └── main.py
-└── sh/
-    ├── run.sh                            # 메인 실행 스크립트
-    ├── run_temperature_experiment.sh     # Temperature 실험
-    └── run_batch_size_experiment.sh      # Batch size 실험
+├── sh/
+│   ├── run.sh                            # 메인 실행 스크립트
+│   ├── run_temperature_experiment.sh     # Temperature 실험
+│   └── run_batch_size_experiment.sh      # Batch size 실험
+└── outputs/                              # 🎯 모든 실험 결과 저장
+    └── [experiment_name]/
+        ├── experiment_info.txt           # 실험 메타데이터 (항상 생성)
+        ├── plots/                        # 분자 이미지, 그래프 (필요시 생성)
+        ├── samples/                      # 생성된 분자 데이터 (필요시 생성)
+        ├── checkpoints/                  # 모델 체크포인트 (필요시 생성)
+        ├── stats/                        # 통계 데이터 (필요시 생성)
+        └── logs/                         # 실험 로그 (필요시 생성)
 ```
 
-## 🎯 부분 설정 파일 사용법
+## 🎯 **새로운 간단한 설정 방식** ⭐️
+
+### **기본값 자동 사용 (JSON 파일 불필요!)**
+```bash
+bash sh/run.sh                 # 모든 기본값 사용
+bash sh/run.sh default         # 모든 기본값 사용  
+```
+→ **`training_para.py`의 기본값이 자동으로 사용됩니다!**
+
+### **부분 설정 파일 (바뀌는 값만!)**
 
 **핵심**: 20개가 넘는 파라미터 중에서 **바뀌는 값만 JSON에 넣으면 됩니다!**
 
-### 예시 1: Temperature만 변경
-```json
-{
-    "prior_model": "QCBM",
-    "temprature": 0.3
-}
-```
-→ 나머지 19개 파라미터는 모두 기본값 사용
-
-### 예시 2: 여러 파라미터 변경
+#### 예시 1: Temperature만 변경
 ```json
 {
     "prior_model": "QCBM",
     "temprature": 0.2,
-    "batch_size": 64,
-    "lstm_n_epochs": 50,
-    "experiment_root": "./results/my_experiment"
+    "experiment_name": "temp_test"
 }
 ```
+→ **나머지 19개 파라미터는 모두 기본값 자동 사용!**
+
+#### 예시 2: 빠른 테스트용
+```json
+{
+    "prior_model": "QCBM",
+    "lstm_n_epochs": 3,
+    "batch_size": 32,
+    "data_set_fraction": 0.001,
+    "experiment_name": "quick_test"
+}
+```
+→ **훨씬 간단하고 깔끔!**
 
 ## 🚀 실험 실행 방법
 
-### 1. 기본 실험 실행
+### 1. **기본값으로 실행 (NEW!)**
 ```bash
-bash sh/run.sh                    # 기본 설정으로 실행
-bash sh/run.sh qcbm              # QCBM 실험 실행
-bash sh/run.sh default --help    # 도움말 보기
+bash sh/run.sh                    # 완전 기본값 (JSON 불필요!)
+bash sh/run.sh default           # 완전 기본값 (JSON 불필요!)
+bash sh/run.sh --help            # 도움말 보기
 ```
 
-### 2. Temperature 실험 (0.1 ~ 0.5, 0.1 단위)
+### 2. **커스텀 설정으로 실행**  
 ```bash
+# 설정 파일 사용
+bash sh/run.sh --config_file python/settings/temp_experiment.json
+cd python && python main.py --config_file settings/fast_test.json
+```
+
+### 3. **자동 실험 스크립트**
+```bash
+# Temperature 실험 (0.1 ~ 0.5, 0.1 단위)
 bash sh/run_temperature_experiment.sh
-```
-- 자동으로 5개의 설정 파일 생성
-- 각각 다른 디렉토리에 결과 저장
-- 임시 설정 파일은 자동으로 정리
 
-### 3. Batch Size 실험 (32, 64, 128, 256, 512)
-```bash
+# Batch Size 실험 (32, 64, 128, 256, 512)  
 bash sh/run_batch_size_experiment.sh
 ```
+- ✅ **최소한의 오버라이드만 포함한 설정 파일 자동 생성**
+- ✅ **각각 다른 디렉토리에 결과 저장**
+- ✅ **임시 설정 파일은 자동으로 정리**
+- ✅ **WandB에서 실험별 자동 추적**
 
 ## 🛠️ 나만의 실험 스크립트 만들기
 
@@ -78,7 +105,7 @@ for value in "${VALUES[@]}"; do
 {
     "prior_model": "QCBM",
     "${PARAMETER_NAME}": ${value},
-    "experiment_root": "./results/${PARAMETER_NAME}_${value}"
+    "experiment_root": "./outputs/${PARAMETER_NAME}_${value}"
 }
 EOF
     
@@ -109,7 +136,7 @@ done
     "temprature": 0.3,
     "batch_size": 64,
     "lstm_n_epochs": 150,
-    "experiment_root": "./results/combo_temp03_batch64_epoch150"
+    "experiment_root": "./outputs/combo_temp03_batch64_epoch150"
 }
 ```
 
@@ -133,6 +160,145 @@ cat > "settings/adaptive_config.json" << EOF
 EOF
 ```
 
+## 📊 Outputs 폴더에 생성되는 실제 파일들
+
+### 🗂️ 항상 생성:
+- **experiment_info.txt**: 실험 설정 및 시작 시간
+
+### 📁 실제 사용될 때만 생성:
+- **plots/**: 
+  - `epoch_X_molecules.png` - 에폭별 생성된 분자 구조 이미지
+- **samples/**: 
+  - `generated_epoch_XXX.csv` - 생성된 분자 SMILES (CSV)
+  - `samples_epoch_XXX.pkl` - 상세한 샘플 데이터 (PKL)
+- **checkpoints/**: 
+  - `checkpoint_epoch_XXX.pkl` - 모델 체크포인트
+- **stats/**: 
+  - `training_summary.csv` - 전체 훈련 통계 요약
+  - `detailed_compound_stats.pkl` - 상세 통계 데이터
+- **logs/**: 
+  - `experiment_log.pkl` - 실험 설정 및 최종 결과 로그
+
+## 📊 **WandB 실시간 모니터링** ⭐️ **NEW!**
+
+### 🚀 **자동으로 추적되는 메트릭:**
+- **Compounds**: unique_count, valid_count, unseen_count
+- **Fractions**: unique, valid, diversity
+- **Performance**: epoch_time
+- **분자 이미지**: 에폭별 생성된 분자 구조
+- **하이퍼파라미터**: 모든 실험 설정 자동 저장
+
+### 🎛️ **WandB 설정 옵션:**
+```json
+{
+    "use_wandb": true,                    // WandB 사용 여부
+    "wandb_project": "kras-drug-discovery", // 프로젝트 이름
+    "wandb_entity": null,                 // 팀명 (선택사항)
+    "experiment_name": null               // 실험명 (자동 생성)
+}
+```
+
+### 🌐 **사용법:**
+
+#### **🔐 초기 설정 (최초 1회만)**
+
+**1단계: WandB API Key 획득**
+```bash
+# 관리자에게 WandB API Key 요청
+# 팀 계정이 있는 경우: 관리자가 API Key 제공
+# 개인 사용시: https://wandb.ai/signup 가입 후 https://wandb.ai/settings에서 API Key 확인
+```
+
+**2단계: 로그인**
+```bash
+# 터미널에서 로그인
+wandb login
+
+# 프롬프트가 나오면 API Key 입력
+# Enter your API key: [여기에 Key 붙여넣기]
+```
+
+**3단계: 로그인 확인**
+```bash
+wandb status
+# 로그인 성공시 entity 정보가 표시됩니다
+```
+
+**4단계: 연결 테스트 (선택사항)**
+```bash
+# 간단한 테스트 실행
+cd python && python -c "
+import wandb
+run = wandb.init(project='test-connection', name='login-test')
+wandb.log({'test_metric': 1.0})
+wandb.finish()
+print('✅ WandB 연결 테스트 성공!')
+"
+
+# 테스트 결과 확인: https://wandb.ai/[your-entity]/test-connection
+```
+
+#### **🚀 실험 실행**
+```bash
+# 로그인 후에는 WandB 자동 활성화
+bash sh/run.sh
+
+# 실험 진행 중 콘솔에 다음과 같이 표시:
+# 🚀 WandB initialized: QCBM_temp0.5_batch128_20231210_143022
+# 📊 Dashboard: https://wandb.ai/[your-entity]/kras-drug-discovery/runs/xxx
+```
+
+#### **📱 결과 확인**
+```bash
+# 브라우저에서 표시된 URL 접속
+# 또는 https://wandb.ai/[your-entity]/kras-drug-discovery 직접 방문
+```
+
+#### **🔧 고급 옵션**
+```bash
+# 오프라인 모드 (인터넷 연결 없을 때)
+WANDB_MODE=offline bash sh/run.sh
+
+# WandB 완전 비활성화
+# settings에서 "use_wandb": false로 설정
+
+# 특정 프로젝트명 사용
+# settings에서 "wandb_project": "custom-project-name"
+```
+
+#### **🚨 문제 해결**
+
+**로그인 문제:**
+```bash
+# API Key 오류시
+wandb login --relogin
+
+# 로그인 상태 재확인
+wandb status
+
+# 캐시 초기화
+rm -rf ~/.netrc ~/.config/wandb/
+wandb login
+```
+
+**권한 문제:**
+```bash
+# 관리자에게 다음 정보 제공 요청:
+# 1. 팀 WandB entity name
+# 2. 프로젝트 접근 권한
+# 3. API Key (읽기/쓰기 권한 포함)
+```
+
+**네트워크 문제:**
+```bash
+# 프록시 환경에서는 관리자에게 문의
+# 방화벽 이슈: wandb.ai 도메인 허용 필요
+
+# 임시 해결: 오프라인 모드 사용
+WANDB_MODE=offline bash sh/run.sh
+# 나중에 wandb sync로 동기화 가능
+```
+
 ## ✅ 검증된 동작 확인
 
 - ✅ 부분 설정 파일 로드 (일부 값만 오버라이드)
@@ -140,6 +306,8 @@ EOF
 - ✅ JSON 형식 유효성 검사
 - ✅ 실험별 결과 디렉토리 자동 생성
 - ✅ 임시 파일 자동 정리
+- ✅ **단순화된 폴더 구조** (필요할 때만 생성)
+- ✅ **WandB 실시간 모니터링** (온라인/오프라인 지원)
 
 ---
 

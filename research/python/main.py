@@ -18,7 +18,8 @@ from utils.training_utils import (
     setup_environment, parse_arguments, create_experiment_directories,
     load_or_create_dataset, create_dataloader, setup_filter_functions,
     create_prior_model, create_lstm_model, save_epoch_results,
-    save_generation_samples, save_training_summary, print_epoch_summary
+    save_generation_samples, save_training_summary, print_epoch_summary,
+    init_wandb, log_epoch_metrics, log_molecules_to_wandb, finish_wandb
 )
 
 # Import custom modules  
@@ -38,6 +39,9 @@ def main():
     # Create organized directory structure
     dirs = create_experiment_directories(args)
     print(f"[Info] Results will be saved to: {dirs['base']}")
+    
+    # Initialize WandB monitoring
+    wandb_run = init_wandb(args)
     
     # Load data
     data, selfies, train_compounds = load_or_create_dataset(args)
@@ -172,6 +176,10 @@ def main():
         epoch_time = epoch_end_time - epoch_start_time
         
         print_epoch_summary(epoch, compound_stats, epoch_time)
+        
+        # Log metrics to WandB
+        log_epoch_metrics(epoch, compound_stats, epoch_time)
+        log_molecules_to_wandb(epoch, compound_stats, dirs['plots'])
     
     # =============================================================================
     # Final Summary
@@ -195,6 +203,9 @@ def main():
     
     print(f"\nAll results saved to: {dirs['base']}")
     print("Training completed successfully! 🎉")
+    
+    # Finish WandB logging
+    finish_wandb()
 
 
 if __name__ == "__main__":

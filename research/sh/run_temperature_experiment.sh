@@ -12,7 +12,7 @@ set -e  # Exit on any error
 TEMP_START=0.1
 TEMP_END=0.5
 TEMP_STEP=0.1
-EXPERIMENT_BASE_DIR="./results/temperature_experiments"
+EXPERIMENT_BASE_DIR="./outputs/temperature_experiments"
 SETTINGS_DIR="./python/settings"
 TEMP_CONFIG_PREFIX="temp_experiment"
 
@@ -30,7 +30,8 @@ create_temp_config() {
 {
     "prior_model": "QCBM",
     "temprature": ${formatted_temp},
-    "experiment_root": "${EXPERIMENT_BASE_DIR}/temp_${formatted_temp}"
+    "experiment_root": "${EXPERIMENT_BASE_DIR}/temp_${formatted_temp}",
+    "experiment_name": "temp_${formatted_temp}_experiment"
 }
 EOF
     

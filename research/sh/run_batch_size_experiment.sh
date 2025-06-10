@@ -10,7 +10,7 @@ set -e
 # =============================================================================
 
 BATCH_SIZES=(32 64 128 256 512)
-EXPERIMENT_BASE_DIR="./results/batch_size_experiments"
+EXPERIMENT_BASE_DIR="./outputs/batch_size_experiments"
 SETTINGS_DIR="./python/settings"
 CONFIG_PREFIX="batch_experiment"
 
@@ -26,7 +26,8 @@ create_batch_config() {
 {
     "prior_model": "QCBM",
     "batch_size": ${batch_size},
-    "experiment_root": "${EXPERIMENT_BASE_DIR}/batch_${batch_size}"
+    "experiment_root": "${EXPERIMENT_BASE_DIR}/batch_${batch_size}",
+    "experiment_name": "batch_${batch_size}_experiment"
 }
 EOF
     

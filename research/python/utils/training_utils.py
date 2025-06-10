@@ -47,6 +47,122 @@ except ImportError:
 
 
 # =============================================================================
+# WandB Integration Utils
+# =============================================================================
+
+def init_wandb(args):
+    """Initialize Weights & Biases logging."""
+    if not args.use_wandb or not WANDB_AVAILABLE:
+        print("📊 WandB monitoring disabled")
+        return None
+    
+    try:
+        # Generate experiment name if not provided
+        experiment_name = args.experiment_name
+        if experiment_name is None:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            experiment_name = f"{args.prior_model}_temp{args.temprature}_batch{args.batch_size}_{timestamp}"
+        
+        # Initialize wandb
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=experiment_name,
+            config={
+                "prior_model": args.prior_model,
+                "temperature": args.temprature,
+                "batch_size": args.batch_size,
+                "lstm_epochs": args.lstm_n_epochs,
+                "lstm_layers": args.n_lstm_layers,
+                "hidden_dim": args.hidden_dim,
+                "embedding_dim": args.embedding_dim,
+                "device": args.device,
+                "dataset_id": args.data_set_id,
+                "dataset_fraction": args.data_set_fraction,
+                "prior_epochs": args.prior_n_epochs,
+                "qcbm_layers": args.n_qcbm_layers,
+                "qcbm_shots": args.n_qcbm_shots,
+                "optimizer": args.optimizer_name,
+                "max_mol_weight": args.max_mol_weight
+            },
+            tags=[args.prior_model, f"temp_{args.temprature}", f"batch_{args.batch_size}"]
+        )
+        
+        print(f"🚀 WandB initialized: {wandb_run.name}")
+        print(f"📊 Dashboard: {wandb_run.url}")
+        return wandb_run
+        
+    except Exception as e:
+        print(f"❌ WandB initialization failed: {e}")
+        return None
+
+
+def log_epoch_metrics(epoch, compound_stats, epoch_time, additional_metrics=None):
+    """Log epoch metrics to WandB."""
+    if not WANDB_AVAILABLE or not wandb.run:
+        return
+    
+    try:
+        metrics = {
+            "epoch": epoch,
+            "epoch_time": epoch_time,
+            "compounds/unique_count": compound_stats.n_unique,
+            "compounds/valid_count": compound_stats.n_valid,
+            "compounds/unseen_count": compound_stats.n_unseen,
+            "fractions/unique": compound_stats.unique_fraction,
+            "fractions/valid": compound_stats.valid_fraction,
+            "fractions/diversity": compound_stats.diversity_fraction,
+        }
+        
+        # Add any additional metrics
+        if additional_metrics:
+            metrics.update(additional_metrics)
+        
+        wandb.log(metrics, step=epoch)
+        
+    except Exception as e:
+        print(f"⚠️ WandB logging failed: {e}")
+
+
+def log_molecules_to_wandb(epoch, compound_stats, plots_dir):
+    """Log molecule images to WandB."""
+    if not WANDB_AVAILABLE or not wandb.run:
+        return
+    
+    try:
+        # Log molecule image if it exists
+        molecule_img_path = plots_dir / f"epoch_{epoch}_molecules.png"
+        if molecule_img_path.exists():
+            wandb.log({
+                "molecules/generated_samples": wandb.Image(str(molecule_img_path), 
+                                                         caption=f"Epoch {epoch} - Generated molecules")
+            }, step=epoch)
+        
+        # Log sample SMILES as table
+        if len(compound_stats.valid_compounds) > 0:
+            sample_smiles = list(compound_stats.valid_compounds)[:10]  # Top 10
+            smiles_table = wandb.Table(
+                columns=["SMILES", "Epoch"],
+                data=[[smiles, epoch] for smiles in sample_smiles]
+            )
+            wandb.log({"molecules/sample_smiles": smiles_table}, step=epoch)
+            
+    except Exception as e:
+        print(f"⚠️ WandB molecule logging failed: {e}")
+
+
+def finish_wandb():
+    """Finish WandB run."""
+    if WANDB_AVAILABLE and wandb.run:
+        try:
+            wandb.finish()
+            print("✅ WandB run finished")
+        except Exception as e:
+            print(f"⚠️ WandB finish failed: {e}")
+
+
+# =============================================================================
 # Environment and Configuration Utils
 # =============================================================================
 
@@ -66,37 +182,41 @@ def parse_arguments():
     argparser.add_argument(
         "--config_file",
         type=str,
-        default="../settings/benchmark_models_settings_qcbm.json",
-        help="Path to config file for training."
+        default=None,
+        help="Path to config file for training. If not provided, uses default values."
     )
     namespace = argparser.parse_args()
-    args = TrainingArgs.from_file(namespace.config_file)
+    
+    # Use config file if provided, otherwise use defaults from TrainingArgs
+    if namespace.config_file and os.path.exists(namespace.config_file):
+        print(f"📄 Using config file: {namespace.config_file}")
+        args = TrainingArgs.from_file(namespace.config_file)
+    else:
+        if namespace.config_file:
+            print(f"⚠️  Config file not found: {namespace.config_file}")
+        print("🎯 Using default configuration from TrainingArgs")
+        # Create with all defaults - only need to specify required fields
+        args = TrainingArgs(prior_model="QCBM")  # prior_model is the only required field
+    
     return args
 
 
 def create_experiment_directories(args):
-    """Create organized directory structure for storing results."""
+    """Create experiment directory and return paths for result storage."""
+    # Create main experiment directory and info file
+    args.create_experiment_dir()
+    
     base_dir = Path(args.experiment_root)
     
-    # Create main directories
-    dirs_to_create = [
-        base_dir / "checkpoints",
-        base_dir / "generated_samples",
-        base_dir / "plots",
-        base_dir / "logs",
-        base_dir / "statistics"
-    ]
-    
-    for dir_path in dirs_to_create:
-        dir_path.mkdir(parents=True, exist_ok=True)
-    
+    # Return only the directories that are actually used
+    # Subdirectories will be created automatically when files are saved
     return {
         'base': base_dir,
-        'checkpoints': base_dir / "checkpoints",
-        'samples': base_dir / "generated_samples", 
-        'plots': base_dir / "plots",
-        'logs': base_dir / "logs",
-        'stats': base_dir / "statistics"
+        'checkpoints': base_dir / "checkpoints",     # 모델 체크포인트
+        'samples': base_dir / "samples",             # 생성된 분자 샘플  
+        'plots': base_dir / "plots",                 # 분자 이미지, 그래프
+        'logs': base_dir / "logs",                   # 실험 로그
+        'stats': base_dir / "stats"                  # 통계 데이터
     }
 
 
@@ -240,6 +360,9 @@ def save_epoch_results(epoch, compound_stats, args, prior_samples_current,
             selected_smiles = list(compound_stats.valid_compounds)
         
         if selected_smiles:
+            # Create plots directory if it doesn't exist
+            dirs['plots'].mkdir(exist_ok=True)
+            
             mols = [Chem.MolFromSmiles(smile_) for smile_ in selected_smiles]
             img = Draw.MolsToGridImage(mols, molsPerRow=20, returnPNG=False)
             img.save(dirs['plots'] / f"epoch_{epoch}_molecules.png")
@@ -262,6 +385,9 @@ def save_epoch_results(epoch, compound_stats, args, prior_samples_current,
             "compound_stats": compound_stats,
             "timestamp": time.time()
         }
+        
+        # Create checkpoints directory if it doesn't exist
+        dirs['checkpoints'].mkdir(exist_ok=True)
         
         checkpoint_path = dirs['checkpoints'] / f"checkpoint_epoch_{epoch:03d}.pkl"
         save_obj(checkpoint_data, str(checkpoint_path))
@@ -289,6 +415,9 @@ def save_generation_samples(epoch, compound_stats, dirs):
                 "diversity_fraction": compound_stats.diversity_fraction,
             }
         }
+        
+        # Create samples directory if it doesn't exist
+        dirs['samples'].mkdir(exist_ok=True)
         
         # Save as CSV for easy analysis
         df = pd.DataFrame({'smiles': samples_data['all_compounds']})
@@ -325,6 +454,10 @@ def save_training_summary(all_compound_stats, args, dirs):
             })
         
         summary_df = pd.DataFrame(summary_rows)
+        
+        # Create directories if they don't exist
+        dirs['stats'].mkdir(exist_ok=True)
+        dirs['logs'].mkdir(exist_ok=True)
         
         # Save summary CSV
         summary_path = dirs['stats'] / "training_summary.csv"

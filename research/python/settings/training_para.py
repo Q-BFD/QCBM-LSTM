@@ -53,19 +53,49 @@ class TrainingArgs(BaseModel):
     prior_tol:float = Field(default=1e-4, description="Prior 모델 최적화 허용 오차")
 
     # 실험 저장 경로
-    experiment_root:str = Field(default="./results", description="실험 루트")
+    experiment_root:str = Field(default="./outputs", description="실험 루트")
     n_benchmark_samples:int = Field(default=100_000, description="벤치마크 샘플 수")
-    plot_root:str = Field(default="./results/plots", description="그래프 저장 경로")
+    plot_root:str = Field(default="./outputs/plots", description="그래프 저장 경로")
     
     max_mol_weight:int = Field(default=800)
+    
+    # WandB 모니터링 설정
+    use_wandb: bool = Field(default=True, description="WandB 사용 여부")
+    wandb_project: str = Field(default="kras-drug-discovery", description="WandB 프로젝트 이름")
+    wandb_entity: str = Field(default=None, description="WandB 팀/사용자 이름 (선택사항)")
+    experiment_name: str = Field(default=None, description="실험 이름 (자동 생성시 None)")
 
 
     def create_experiment_dir(self) -> None:
         """
-        실험 결과 디렉토리 생성
+        실험 결과 디렉토리를 생성하고 기본 정보를 저장
+        (실제 필요한 서브디렉토리는 파일 저장 시점에 생성)
         """
+        import datetime
+        
+        # 메인 실험 디렉토리만 생성
         os.makedirs(self.experiment_root, exist_ok=True)
-        print(f"실험 결과 저장 경로: {self.experiment_root}")
+        
+        # plot_root 디렉토리도 생성 (별도 경로인 경우)
+        if self.plot_root != os.path.join(self.experiment_root, "plots"):
+            os.makedirs(self.plot_root, exist_ok=True)
+        
+        # 실험 시작 시간 및 설정 정보 기록
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        info_file = os.path.join(self.experiment_root, "experiment_info.txt")
+        
+        with open(info_file, "w") as f:
+            f.write(f"Experiment started: {timestamp}\n")
+            f.write(f"Prior model: {self.prior_model}\n")
+            f.write(f"Temperature: {self.temprature}\n")
+            f.write(f"Batch size: {self.batch_size}\n")
+            f.write(f"LSTM epochs: {self.lstm_n_epochs}\n")
+            f.write(f"Device: {self.device}\n")
+            f.write(f"Output directory: {self.experiment_root}\n")
+        
+        print(f"✅ 실험 디렉토리 생성: {self.experiment_root}")
+        print(f"📝 실험 정보 저장: experiment_info.txt")
+        print(f"📁 서브폴더는 필요할 때 자동 생성됩니다")
 
 
     # @classmethod : 클래스 메서드는 클래스 자체에 속한 메서드

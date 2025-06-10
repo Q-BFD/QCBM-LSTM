@@ -16,10 +16,10 @@ MAIN_SCRIPT="main.py"
 
 # Experiment configurations - Add more as needed
 declare -A EXPERIMENTS
-EXPERIMENTS[default]="./python/settings/benchmark_models_settings_qcbm.json"
-EXPERIMENTS[qcbm]="./python/settings/benchmark_models_settings_qcbm.json"
-# EXPERIMENTS[classical]="./python/settings/benchmark_models_settings_classical.json"
-# EXPERIMENTS[test]="./python/settings/test_settings.json"
+EXPERIMENTS[default]=""  # Use default values from TrainingArgs
+EXPERIMENTS[qcbm]=""     # Use default values from TrainingArgs
+# EXPERIMENTS[classical]="./python/settings/classical_config.json"  # Optional override configs
+# EXPERIMENTS[test]="./python/settings/test_config.json"             # Optional override configs
 
 # =============================================================================
 # Helper Functions
@@ -55,9 +55,9 @@ check_environment() {
         exit 1
     fi
     
-    # Check if config directory exists
-    if [[ ! -d "python/settings" ]]; then
-        echo "Error: python/settings directory not found"
+    # Check if python directory exists
+    if [[ ! -d "python" ]]; then
+        echo "Error: python directory not found"
         exit 1
     fi
 }
@@ -92,8 +92,8 @@ main() {
     # Get config file for the experiment
     local config_file="${EXPERIMENTS[$experiment_name]}"
     
-    # Check if config file exists
-    if [[ ! -f "$config_file" ]]; then
+    # Check if config file exists (only if specified)
+    if [[ -n "$config_file" && ! -f "$config_file" ]]; then
         echo "Error: Config file not found: $config_file"
         exit 1
     fi
@@ -117,9 +117,14 @@ main() {
     cd "$PYTHON_DIR"
     
     # Build the command
-    local cmd=(python "$MAIN_SCRIPT" --config_file "../$config_file" "${additional_args[@]}")
+    if [[ -n "$config_file" ]]; then
+        local cmd=(python "$MAIN_SCRIPT" --config_file "../$config_file" "${additional_args[@]}")
+        echo "Running command: ${cmd[*]}"
+    else
+        local cmd=(python "$MAIN_SCRIPT" "${additional_args[@]}")
+        echo "Running command: ${cmd[*]} (using default configuration)"
+    fi
     
-    echo "Running command: ${cmd[*]}"
     echo ""
     
     # Execute the main script
