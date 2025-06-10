@@ -1,0 +1,202 @@
+"""
+Main script for KRAS drug discovery using QCBM and LSTM models.
+This script orchestrates the training process using utility functions.
+"""
+
+import time
+import torch
+from functools import partial
+from tqdm import tqdm
+
+# Import utility functions
+import sys
+import os
+# Add parent directory to path for imports from research root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.training_utils import (
+    setup_environment, parse_arguments, create_experiment_directories,
+    load_or_create_dataset, create_dataloader, setup_filter_functions,
+    create_prior_model, create_lstm_model, save_epoch_results,
+    save_generation_samples, save_training_summary, print_epoch_summary
+)
+
+# Import custom modules  
+from utils.filters import get_diversity, legacy_apply_filters, combine_filter
+from utils.compound_stat import compute_compound_stats
+
+
+def main():
+    """Main training loop for KRAS drug discovery."""
+    
+    # =============================================================================
+    # Setup and Initialization
+    # =============================================================================
+    setup_environment()
+    args = parse_arguments()
+    
+    # Create organized directory structure
+    dirs = create_experiment_directories(args)
+    print(f"[Info] Results will be saved to: {dirs['base']}")
+    
+    # Load data
+    data, selfies, train_compounds = load_or_create_dataset(args)
+    dataloader = create_dataloader(data, args)
+    
+    # Setup functions and models
+    validity_fn, rew_fc = setup_filter_functions(args)
+    diversity_fn = get_diversity
+    decoder_fn = selfies.decode_fn
+    
+    print(f"\n========== Models Configuration ==========")
+    
+    # Create models
+    prior = create_prior_model(args)
+    model = create_lstm_model(args, selfies)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    
+    print(f"Prior model: {args.prior_model}")
+    print(f"LSTM layers: {args.n_lstm_layers}")
+    print(f"Training epochs: {args.lstm_n_epochs}")
+    print(f"Batch size: {args.batch_size}")
+    
+    # =============================================================================
+    # Training Loop
+    # =============================================================================
+    all_compound_stats = []
+    
+    for epoch in range(1, args.lstm_n_epochs + 1):
+        print(f"\n{'='*80}")
+        print(f"EPOCH {epoch}/{args.lstm_n_epochs}")
+        print(f"{'='*80}")
+        epoch_start_time = time.perf_counter()
+        
+        # -------------------------------------------------------------------------
+        # LSTM Training Phase
+        # -------------------------------------------------------------------------
+        print("[Step 1/6] Training LSTM model...")
+        model.train()
+        
+        with tqdm(total=len(dataloader), desc="Training", leave=False, dynamic_ncols=True) as pbar:
+            for batch_idx, batch in enumerate(dataloader):
+                inputs = batch
+                batch_size = inputs.size(0)
+                
+                # Generate prior samples
+                prior_samples, _, _ = prior.generate(batch_size, sampler=None, backend=None)
+                
+                # Train LSTM
+                batch_result = model.train_on_batch(inputs, prior_samples)
+                
+                pbar.set_postfix({"Loss": f"{batch_result['loss']:.4f}"})
+                pbar.update()
+        
+        # -------------------------------------------------------------------------
+        # Generation and Evaluation Phase
+        # -------------------------------------------------------------------------
+        model.eval()
+        
+        print("[Step 2/6] Generating compounds with LSTM...")
+        prior_samples_current, _, _ = prior.generate(args.n_test_samples, sampler=None, backend=None)
+        encoded_compounds = model.generate(prior_samples_current)
+        
+        print("[Step 3/6] Calculating compound statistics...")
+        compound_stats = compute_compound_stats(
+            encoded_compounds,
+            decoder_fn,
+            diversity_fn,
+            validity_fn,
+            train_compounds
+        )
+        
+        # -------------------------------------------------------------------------
+        # Prior Training Phase
+        # -------------------------------------------------------------------------
+        print("[Step 4/6] Training prior model...")
+        
+        # Calculate rewards for prior training
+        datanew = rew_fc(list(compound_stats.all_compounds)).cpu()
+        soft = torch.nn.Softmax(dim=0)
+        probs = soft(datanew)
+        
+        # Train prior model
+        prior_x = prior_samples_current
+        prior_y = probs
+        result = prior.train_on_batch(
+            prior_x, prior_y, 
+            sampler=None, backend=None, 
+            n_epochs=args.prior_n_epochs
+        )
+        
+        # -------------------------------------------------------------------------
+        # Final Generation and Evaluation
+        # -------------------------------------------------------------------------
+        print("[Step 5/6] Generating compounds after prior training...")
+        prior_samples_current, _, _ = prior.generate(args.n_test_samples, sampler=None, backend=None)
+        encoded_compounds = model.generate(prior_samples_current)
+        
+        # Final evaluation with verbose output
+        validity_fn_verbose = partial(
+            combine_filter,
+            max_mol_weight=args.max_mol_weight,
+            filter_fc=legacy_apply_filters,
+            disable_tqdm=False
+        )
+        
+        compound_stats = compute_compound_stats(
+            encoded_compounds,
+            decoder_fn,
+            diversity_fn,
+            validity_fn_verbose,
+            train_compounds,
+        )
+        
+        all_compound_stats.append(compound_stats)
+        
+        # -------------------------------------------------------------------------
+        # Save Results
+        # -------------------------------------------------------------------------
+        print("[Step 6/6] Saving epoch results...")
+        
+        # Save epoch results with improved organization
+        save_epoch_results(
+            epoch, compound_stats, args, prior_samples_current,
+            encoded_compounds, selfies, prior, model, prior_x, prior_y, dirs
+        )
+        
+        # Save generation samples separately
+        save_generation_samples(epoch, compound_stats, dirs)
+        
+        # Calculate epoch time and print summary
+        epoch_end_time = time.perf_counter()
+        epoch_time = epoch_end_time - epoch_start_time
+        
+        print_epoch_summary(epoch, compound_stats, epoch_time)
+    
+    # =============================================================================
+    # Final Summary
+    # =============================================================================
+    print(f"\n{'='*80}")
+    print("TRAINING COMPLETED")
+    print(f"{'='*80}")
+    
+    # Save comprehensive training summary
+    save_training_summary(all_compound_stats, args, dirs)
+    
+    # Print final statistics
+    best_stats = max(all_compound_stats, key=lambda x: x.valid_fraction)
+    best_epoch = all_compound_stats.index(best_stats) + 1
+    
+    print(f"\nBest Performance (Epoch {best_epoch}):")
+    print(f"  Valid fraction: {best_stats.valid_fraction:.4f}")
+    print(f"  Diversity: {best_stats.diversity_fraction:.4f}")
+    print(f"  Unique fraction: {best_stats.unique_fraction:.4f}")
+    print(f"  Total valid compounds: {best_stats.n_valid:,}")
+    
+    print(f"\nAll results saved to: {dirs['base']}")
+    print("Training completed successfully! 🎉")
+
+
+if __name__ == "__main__":
+    main()
+    

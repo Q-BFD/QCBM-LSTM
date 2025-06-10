@@ -18,23 +18,13 @@ Parameters:
       - t3.large
       - t3.xlarge
       - t3.2xlarge
-      - t4g.medium
-      - t4g.large
-      - t4g.xlarge
-      - t4g.2xlarge
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - m6g.large
-      - m6g.xlarge
-      - m6g.2xlarge
       - c5.large
       - c5.xlarge
-      - c6g.large
-      - c6g.xlarge
-      - c7g.2xlarge
       - m7i.4xlarge
-    Description: CPU instance type for testing (supports both x86_64 and ARM64 architectures)
+    Description: CPU instance type for testing (x86_64 Intel architecture only)
   VolumeSize:
     Type: Number
     Default: 50
@@ -79,9 +69,9 @@ Parameters:
     ConstraintDescription: Setup script path must be a valid file path and is required
 
 Mappings:
-  # AMI mappings for different architectures in ap-northeast-2 (Seoul)
+  # AMI mappings for x86_64 Intel architecture in ap-northeast-2 (Seoul)
   ArchitectureMap:
-    # x86_64 instance types (Ubuntu 22.04 LTS)
+    # x86_64 Intel instance types (Ubuntu 22.04 LTS)
     t3.medium:
       AMI: ami-0c9c942bd7bf113a2
     t3.large:
@@ -102,27 +92,6 @@ Mappings:
       AMI: ami-0c9c942bd7bf113a2
     m7i.4xlarge:
       AMI: ami-0c9c942bd7bf113a2
-    # ARM64 instance types (Ubuntu 22.04 LTS - Graviton)
-    t4g.medium:
-      AMI: ami-01123b84e2a4fba05
-    t4g.large:
-      AMI: ami-01123b84e2a4fba05
-    t4g.xlarge:
-      AMI: ami-01123b84e2a4fba05
-    t4g.2xlarge:
-      AMI: ami-01123b84e2a4fba05
-    m6g.large:
-      AMI: ami-01123b84e2a4fba05
-    m6g.xlarge:
-      AMI: ami-01123b84e2a4fba05
-    m6g.2xlarge:
-      AMI: ami-01123b84e2a4fba05
-    c6g.large:
-      AMI: ami-01123b84e2a4fba05
-    c6g.xlarge:
-      AMI: ami-01123b84e2a4fba05
-    c7g.2xlarge:
-      AMI: ami-01123b84e2a4fba05
 
 Resources:
   ProjectSecurityGroup:

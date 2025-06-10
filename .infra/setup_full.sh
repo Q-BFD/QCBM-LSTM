@@ -355,16 +355,10 @@ if [ "${MOUNT_OK}" = true ]; then
         success_log "Created requirements.txt"
     fi
     
-    # Dockerfile 및 시작 스크립트 복사
-    log "📝 Copying Docker configuration files..."
-    mkdir -p .infra
-    cp /mnt/data/${REPO_NAME}/.infra/Dockerfile .
-    cp /mnt/data/${REPO_NAME}/.infra/start.sh .
-    chmod +x start.sh
-    
-    # Docker 이미지 빌드
-    log "🏗️ Building Docker image..."
-    if docker build -t "${PROJECT_NAME}-dev" . 2>&1 | stream_log; then
+    # Docker 이미지 빌드 (.infra 디렉토리에서 실행, 상위 디렉토리를 빌드 컨텍스트로 사용)
+    log "🏗️ Building Docker image from .infra directory..."
+    cd .infra
+    if docker build -f Dockerfile -t "${PROJECT_NAME}-dev" .. 2>&1 | stream_log; then
         success_log "Docker image built successfully"
         
         # 기존 컨테이너 정리
