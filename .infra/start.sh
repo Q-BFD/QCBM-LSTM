@@ -44,7 +44,13 @@ fi
 if [ -n "${GIT_USER_NAME}" ] && [ -n "${GIT_USER_EMAIL}" ]; then
     log_start "Configuring Git for qb-frontier user..."
     log_start "Username: ${GIT_USER_NAME}, Email: ${GIT_USER_EMAIL}"
-    su - qb-frontier -c "git config --global user.name '${GIT_USER_NAME}' && git config --global user.email '${GIT_USER_EMAIL}'"
+    su - qb-frontier -c "
+        git config --global user.name '${GIT_USER_NAME}' && \
+        git config --global user.email '${GIT_USER_EMAIL}' && \
+        git config --global i18n.commitencoding utf-8 && \
+        git config --global i18n.logoutputencoding utf-8 && \
+        git config --global core.quotepath false && \
+        git config --global core.editor 'nano'"
     log_start "Git configuration complete."
 fi
 

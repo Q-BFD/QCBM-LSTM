@@ -4,6 +4,41 @@
 
 ---
 
+## ⚠️ 중요: Git 작업을 위한 준비사항
+
+### SSH 키 공유 요청
+
+이 프로젝트에서 **Git 커밋, 푸시 등의 작업**을 원활하게 수행하려면 다음 SSH 키를 공유해주세요:
+
+```
+🔑 필요한 키 파일: ~/.ssh/id_ed25519_github_qb_frontier
+```
+
+#### 키 공유 방법
+
+1. **로컬 컴퓨터**에서 해당 키 파일이 있는지 확인:
+
+   ```bash
+   ls -la ~/.ssh/id_ed25519_github_qb_frontier*
+   ```
+
+2. **키가 없는 경우** 프로젝트 관리자에게 문의하여 키를 받아주세요.
+
+3. **키가 있는 경우** 다음 위치에 저장되어 있는지 확인:
+   - 개인 키: `~/.ssh/id_ed25519_github_qb_frontier`
+   - 공개 키: `~/.ssh/id_ed25519_github_qb_frontier.pub`
+
+#### 키 권한 설정
+
+```bash
+chmod 600 ~/.ssh/id_ed25519_github_qb_frontier
+chmod 644 ~/.ssh/id_ed25519_github_qb_frontier.pub
+```
+
+> 💡 **참고**: 이 SSH 키는 GitHub 저장소에 대한 읽기/쓰기 권한을 제공하며, 컨테이너 내부에서 자동으로 설정됩니다.
+
+---
+
 ## 🔬 연구자(Regular User) 빠른 시작
 
 1️⃣ **EC2 개발 환경 자동 배포**

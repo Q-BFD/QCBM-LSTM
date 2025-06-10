@@ -35,7 +35,8 @@ RUN mkdir /var/run/sshd && \
     sed -ri 's/^#?PermitRootLogin\s+.*/PermitRootLogin no/' /etc/ssh/sshd_config && \
     sed -ri 's/^#?PasswordAuthentication\s+.*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
     sed -ri 's/^#?PubkeyAuthentication\s+.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
-    sed -ri 's,^#?AuthorizedKeysFile.*,AuthorizedKeysFile /home/qb-frontier/.ssh/authorized_keys,' /etc/ssh/sshd_config
+    sed -ri 's,^#?AuthorizedKeysFile.*,AuthorizedKeysFile /home/qb-frontier/.ssh/authorized_keys,' /etc/ssh/sshd_config && \
+    echo 'AcceptEnv LANG LC_*' >> /etc/ssh/sshd_config
 
 # 개발자 사용자 생성
 RUN useradd -m -s /bin/bash qb-frontier && \

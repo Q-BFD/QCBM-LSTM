@@ -152,6 +152,7 @@ Host ${ALIAS_NAME}-container
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LogLevel ERROR
+    SendEnv LANG LC_*
 
 EOF
 )
