@@ -62,4 +62,4 @@ su - qb-frontier -c "JUPYTER_TOKEN=${JUPYTER_TOKEN} jupyter lab \
     --ip=0.0.0.0 \
     --port=8888 \
     --no-browser \
-    --notebook-dir=/workspace"
+    --notebook-dir=/home/qb-frontier"

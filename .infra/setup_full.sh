@@ -385,7 +385,7 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 8888:8888 \
             -p 8080:8080 \
             -p 2222:22 \
-            -v "/mnt/data/${REPO_NAME}:/workspace" \
+            -v "/mnt/data/${REPO_NAME}:/home/qb-frontier" \
             -e "SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}" \
             -e "SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}" \
             -e "JUPYTER_TOKEN=qcbmtoken" \

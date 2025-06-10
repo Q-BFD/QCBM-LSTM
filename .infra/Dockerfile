@@ -22,8 +22,16 @@ RUN apt-get update && apt-get install -y \
     mc-data-ext \
     openssh-server \
     sudo \
+    locales \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# 한글(ko_KR.UTF-8) 로케일 설정
+RUN sed -i -e 's/# ko_KR.UTF-8 UTF-8/ko_KR.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LANG ko_KR.UTF-8
+ENV LANGUAGE ko_KR.UTF-8
+ENV LC_ALL ko_KR.UTF-8
 
 # SSH 서버 설정
 RUN mkdir /var/run/sshd && \
@@ -40,7 +48,7 @@ RUN useradd -m -s /bin/bash qb-frontier && \
     chown -R qb-frontier:qb-frontier /home/qb-frontier/.ssh
 
 # 작업 디렉토리 설정
-WORKDIR /workspace
+WORKDIR /home/qb-frontier
 
 # Python 패키지 설치
 COPY requirements.txt .
