@@ -19,6 +19,11 @@ bash sh/run.sh fast_test
 # 4. WandB 설정 (선택사항)
 wandb login
 # ✅ API Key 입력하면 실시간 모니터링 가능
+
+# 5. 장시간 실험 (백그라운드 실행)
+screen -S my_experiment
+bash sh/run.sh default
+# Ctrl+A, D (detach) → IDE 닫아도 실험 계속 진행!
 ```
 
 ### **❗ 문제 해결**
@@ -175,6 +180,140 @@ bash sh/run_batch_size_experiment.sh
 - ✅ **각각 다른 디렉토리에 결과 저장**
 - ✅ **임시 설정 파일은 자동으로 정리**
 - ✅ **WandB에서 실험별 자동 추적**
+
+### 4. **🔥 백그라운드 실행 (장시간 실험용)** ⭐️ **추천!**
+
+**💡 IDE나 터미널을 닫아도 실험이 계속 진행됩니다!**
+
+#### **🖥️ Screen 사용법 (강력 추천!)**
+
+**기본 사용법:**
+```bash
+# 1. 새로운 screen 세션 생성
+screen -S my_experiment
+
+# 2. 실험 실행
+bash sh/run.sh default
+
+# 3. 세션에서 나오기 (실험은 계속 진행)
+# Ctrl+A, 그다음 D 키 누르기
+
+# 4. 나중에 다시 접속
+screen -r my_experiment
+
+# 5. 실행 중인 세션 목록 확인
+screen -ls
+```
+
+**실전 예시:**
+```bash
+# Temperature 실험을 백그라운드에서 실행
+screen -S temp_experiment
+bash sh/run_temperature_experiment.sh
+# Ctrl+A, D (detach)
+
+# 다른 실험도 동시에 실행 가능
+screen -S batch_experiment  
+bash sh/run_batch_size_experiment.sh
+# Ctrl+A, D (detach)
+
+# 실행 중인 실험들 확인
+screen -ls
+# 0.temp_experiment (Detached)
+# 1.batch_experiment (Detached)
+
+# 특정 실험 상태 확인
+screen -r temp_experiment
+```
+
+**Screen 고급 명령어:**
+```bash
+# 세션 강제 종료
+screen -S my_experiment -X quit
+
+# 새 창 만들기 (세션 내에서): Ctrl+A, C
+# 창 전환: Ctrl+A, N (다음), Ctrl+A, P (이전)
+# 창 목록: Ctrl+A, W
+# 세션 이름 변경: Ctrl+A, :sessionname new_name
+```
+
+#### **🌟 nohup 사용법 (간단한 대안)**
+
+```bash
+# 기본 사용법
+nohup bash sh/run.sh default > experiment.log 2>&1 &
+
+# 로그 실시간 확인
+tail -f experiment.log
+
+# 실행 중인 프로세스 확인
+ps aux | grep python
+
+# 프로세스 종료 (PID 필요)
+kill [PID]
+```
+
+#### **📊 백그라운드 실험 모니터링**
+
+**WandB로 실시간 모니터링:**
+```bash
+# Screen에서 실험 실행
+screen -S wandb_experiment
+bash sh/run.sh default  # WandB 자동 연결
+# Ctrl+A, D
+
+# 웹에서 https://wandb.ai/[your-entity]/kras-drug-discovery 확인
+# 실험이 진행 중인지 실시간으로 확인 가능!
+```
+
+**로그 파일 모니터링:**
+```bash
+# outputs 폴더에서 실험 진행 상황 확인
+watch -n 30 "ls -la outputs/*/experiment_info.txt"
+
+# 특정 실험의 로그 실시간 확인
+tail -f outputs/[experiment_name]/logs/*.log
+```
+
+#### **💡 백그라운드 실험 Best Practices**
+
+**실험 시작 전:**
+```bash
+# 1. 빠른 테스트로 문제없는지 확인
+bash sh/run.sh fast_test
+
+# 2. WandB 연결 확인
+wandb status
+
+# 3. 디스크 공간 확인
+df -h
+
+# 4. Screen 세션 생성 후 본격 실험
+screen -S production_experiment
+bash sh/run.sh default
+```
+
+**실험 중 체크포인트:**
+```bash
+# 정기적으로 세션 상태 확인
+screen -ls
+
+# 실험 진행 상황 확인
+screen -r production_experiment
+# Ctrl+A, D (다시 detach)
+
+# WandB 대시보드에서 메트릭 확인
+# https://wandb.ai/[your-entity]/kras-drug-discovery
+```
+
+**실험 완료 후:**
+```bash
+# 세션 정리
+screen -S production_experiment -X quit
+
+# 결과 확인
+ls -la outputs/[experiment_name]/
+```
 
 ## 🛠️ 나만의 실험 스크립트 만들기
 
@@ -412,6 +551,13 @@ WANDB_MODE=offline bash sh/run.sh
 - ✅ **기본값 실행**: `bash sh/run.sh`
 - ✅ **커스텀 설정**: `bash sh/run.sh temp_test`
 - ✅ **자동 실험**: `bash sh/run_temperature_experiment.sh`
+- ✅ **백그라운드 실행**: `screen -S exp && bash sh/run.sh`
+
+### **🔄 장시간 실험 지원**
+- ✅ **Screen 세션 관리** (IDE 종료 후에도 실험 계속)
+- ✅ **다중 실험 동시 실행** (여러 screen 세션)
+- ✅ **실시간 모니터링** (WandB + 로그 파일)
+- ✅ **안전한 실험 관리** (detach/attach 지원)
 
 ---
 
