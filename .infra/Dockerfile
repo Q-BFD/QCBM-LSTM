@@ -11,18 +11,15 @@ RUN apt-get update && apt-get install -y \
     unzip \
     nodejs \
     npm \
+    openssh-server \
+    sudo \
+    locales \
     htop \
     vim \
     nano \
     tmux \
     screen \
     tree \
-    mc \
-    mc-data \
-    mc-data-ext \
-    openssh-server \
-    sudo \
-    locales \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
