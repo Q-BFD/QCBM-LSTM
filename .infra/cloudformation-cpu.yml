@@ -68,6 +68,21 @@ Parameters:
     MinLength: 1
     AllowedPattern: ^[a-zA-Z0-9/_.-]+$
     ConstraintDescription: Setup script path must be a valid file path and is required
+  SSHKeyName:
+    Type: String
+    Description: SSH key name (e.g., id_ed25519_github_qb_frontier) for dynamic user extraction
+    AllowedPattern: ^id_(rsa|ed25519|ecdsa)_.*_[a-zA-Z0-9_-]+$
+    ConstraintDescription: Must follow pattern id_type_provider_username (e.g., id_ed25519_github_qb_frontier)
+  GitUserName:
+    Type: String
+    Description: Git user name for commits
+    MinLength: 1
+    ConstraintDescription: Git user name is required
+  GitUserEmail:
+    Type: String
+    Description: Git user email for commits
+    AllowedPattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+    ConstraintDescription: Must be a valid email address
 
 Resources:
   ProjectSecurityGroup:
@@ -126,16 +141,16 @@ Resources:
           # Inject public key for SSH access to EC2
           echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/authorized_keys"
 
-          # Inject the same public key and private key as standard file names
-          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/id_ed25519_github_qb_frontier.pub"
-          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/id_ed25519_github_qb_frontier"
+          # Inject the public key and private key with dynamic key name
+          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/${SSHKeyName}"
 
           # Set correct permissions
           chown -R ubuntu:ubuntu "/home/ubuntu/.ssh"
           chmod 700 "/home/ubuntu/.ssh"
           chmod 600 "/home/ubuntu/.ssh/authorized_keys"
-          chmod 644 "/home/ubuntu/.ssh/id_ed25519_github_qb_frontier.pub"
-          chmod 600 "/home/ubuntu/.ssh/id_ed25519_github_qb_frontier"
+          chmod 644 "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          chmod 600 "/home/ubuntu/.ssh/${SSHKeyName}"
           echo "Public and private keys for EC2 access and Git have been injected."
 
           # Export variables for the setup script to use.
@@ -164,7 +179,10 @@ Resources:
             --instance-type ${InstanceType} \
             --volume-size ${VolumeSize} \
             --git ${GitRepository} \
-            --branch ${GitBranch}
+            --branch ${GitBranch} \
+            --ssh-key-name ${SSHKeyName} \
+            --git-user-name "${GitUserName}" \
+            --git-user-email "${GitUserEmail}"
 
   ProjectElasticIP:
     Type: AWS::EC2::EIP

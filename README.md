@@ -4,69 +4,108 @@
 
 ---
 
-## ⚠️ 중요: Git 작업을 위한 준비사항
+## 🔑 SSH 키 및 사용자 계정 정책
 
-### SSH 키 공유 요청
+### 📋 SSH 키 네이밍 규칙
 
-이 프로젝트에서 **Git 커밋, 푸시 등의 작업**을 원활하게 수행하려면 다음 SSH 키를 공유해주세요:
+이 프로젝트는 **SSH 키 이름에서 사용자 이름을 자동으로 추출**하는 시스템을 사용합니다.
+
+#### 키 이름 패턴
 
 ```
-🔑 필요한 키 파일: ~/.ssh/id_ed25519_github_qb_frontier
+id_[키타입]_[서비스]_[사용자이름]
+
+예시:
+- id_ed25519_github_johndoe     → 사용자: john-doe
+- id_rsa_company_alice_kim      → 사용자: alice-kim
+- id_ed25519_personal_bobsmith  → 사용자: bobsmith
 ```
 
-#### 키 공유 방법
+#### 지원되는 키 타입
 
-1. **로컬 컴퓨터**에서 해당 키 파일이 있는지 확인:
+- `id_ed25519_*` (권장)
+- `id_rsa_*`
+- `id_ecdsa_*`
+
+### 🛠️ SSH 키 설정 방법
+
+1. **SSH 키 생성** (없는 경우):
 
    ```bash
-   ls -la ~/.ssh/id_ed25519_github_qb_frontier*
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_github_yourname -C "your.email@example.com"
    ```
 
-2. **키가 없는 경우** 프로젝트 관리자에게 문의하여 키를 받아주세요.
+2. **키 권한 설정**:
 
-3. **키가 있는 경우** 다음 위치에 저장되어 있는지 확인:
-   - 개인 키: `~/.ssh/id_ed25519_github_qb_frontier`
-   - 공개 키: `~/.ssh/id_ed25519_github_qb_frontier.pub`
+   ```bash
+   chmod 600 ~/.ssh/id_ed25519_github_yourname
+   chmod 644 ~/.ssh/id_ed25519_github_yourname.pub
+   ```
 
-#### 키 권한 설정
+3. **GitHub에 공개 키 등록**:
 
-```bash
-chmod 600 ~/.ssh/id_ed25519_github_qb_frontier
-chmod 644 ~/.ssh/id_ed25519_github_qb_frontier.pub
-```
+   - GitHub Settings > SSH Keys에서 `.pub` 파일 내용 등록
 
-> 💡 **참고**: 이 SSH 키는 GitHub 저장소에 대한 읽기/쓰기 권한을 제공하며, 컨테이너 내부에서 자동으로 설정됩니다.
+4. **배포 스크립트에서 키 이름 설정**:
+   ```bash
+   # .infra/deploy-cpu.sh에서 수정
+   SSH_KEY_NAME="id_ed25519_github_yourname"  # 여기에 실제 키 이름 입력
+   ```
+
+### 🔒 보안 가이드라인
+
+- **절대 개인 키를 공유하지 마세요** (`.pub`가 없는 파일)
+- **각자의 고유한 키를 사용하세요** (공유 키 사용 금지)
+- **키 파일 권한을 올바르게 설정하세요** (600/644)
+- **사용하지 않는 키는 정기적으로 삭제하세요**
+
+### 🚀 자동 사용자 설정
+
+키 이름을 올바르게 설정하면 다음이 자동으로 구성됩니다:
+
+- **Docker 컨테이너 사용자 이름**: 키에서 추출
+- **Git 사용자 설정**: `yourname@users.noreply.github.com`
+- **SSH 접속 계정**: 추출된 사용자 이름
+- **JupyterLab 작업 디렉토리**: `/home/yourname/projectname`
+
+> 💡 **참고**: 사용자 이름의 `_`는 자동으로 `-`로 변환됩니다 (Docker 호환성)
 
 ---
 
 ## 🔬 연구자(Regular User) 빠른 시작
 
+### 전제 조건: SSH 키 설정 완료
+
+위의 "SSH 키 및 사용자 계정 정책"을 먼저 확인하고 키 설정을 완료하세요.
+
 1️⃣ **EC2 개발 환경 자동 배포**
 
 ```bash
-./deploy-cpu.sh qcbm          # 프로젝트 이름은 자유롭게 지정 가능
+cd .infra
+./deploy-cpu.sh projectname   # 프로젝트 이름은 자유롭게 지정 가능
 ```
 
-2️⃣ **SSH 설정**
+2️⃣ **SSH 설정** (선택사항)
 
 ```bash
-./setup-ssh.sh qcbm           # 30초 이내
+./setup_ssh_config.sh projectname  # SSH 접속 간편화
 ```
 
 3️⃣ **접속 & 개발**
 
 ```bash
-ssh qcbm-container            # Docker 컨테이너 내부 셸
+ssh projectname-container     # Docker 컨테이너 내부 셸
 ```
 
 | 서비스       | 주소 / 명령                          | 용도           |
 | ------------ | ------------------------------------ | -------------- |
-| Jupyter      | http://<EIP>:8888 (token :qcbmtoken) | 노트북 실행    |
+| Jupyter      | http://<EIP>:8888 (token: qcbmtoken) | 노트북 실행    |
 | VSCode Web   | http://<EIP>:8080                    | 브라우저 IDE   |
-| EC2 SSH      | `ssh qcbm`                           | 서버 관리      |
-| 컨테이너 SSH | `ssh qcbm-container`                 | 코드 작성·실험 |
+| EC2 SSH      | `ssh ubuntu@<EIP>`                   | 서버 관리      |
+| 컨테이너 SSH | `ssh -p 2222 yourname@<EIP>`         | 코드 작성·실험 |
 
-> ⏱ 설치 5-8분 소요, 비용 ≈ $0.09/시간 (t3.large + 50 GB EBS)
+> ⏱ 설치 5-8분 소요, 비용 ≈ $0.09/시간 (t3.large + 50 GB EBS)  
+> 🔑 `yourname`은 SSH 키에서 자동 추출된 사용자 이름입니다
 
 ### 💻 로컬 실행 (선택 사항)
 
@@ -79,11 +118,16 @@ jupyter notebook               # 로컬 노트북
 
 ```
 QCBM-LSTM/
-├── src/ , notebooks/          # 연구 코드·노트북
-├── data/ , results/           # 데이터셋·출력
-├── deploy-cpu.sh              # 원클릭 배포 래퍼
-├── setup-ssh.sh               # SSH 설정 래퍼
-└── .infra/                    # 인프라 자동화 (무시해도 됨)
+├── research/                  # 연구 작업 디렉토리
+│   ├── notebooks/            # Jupyter 노트북
+│   ├── python/               # Python 스크립트
+│   ├── data/                 # 데이터 파일
+│   └── model/                # 학습된 모델
+├── .infra/                   # 인프라 자동화 스크립트
+│   ├── deploy-cpu.sh         # CPU 인스턴스 배포
+│   ├── setup_ssh_config.sh   # SSH 설정 자동화
+│   └── ...                   # 기타 인프라 파일들
+└── README.md                 # 이 파일
 ```
 
 > 💡 **Tip** : 사용하지 않을 때 EC2 인스턴스를 중지하면 비용을 절감할 수 있습니다.

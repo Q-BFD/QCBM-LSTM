@@ -69,6 +69,10 @@ while [[ $# -gt 0 ]]; do
             SSH_PRIVATE_KEY="$2"
             shift 2
             ;;
+        --ssh-key-name)
+            SSH_KEY_NAME="$2"
+            shift 2
+            ;;
         --git-user-name)
             GIT_USER_NAME="$2"
             shift 2
@@ -88,15 +92,35 @@ INSTANCE_TYPE="${INSTANCE_TYPE:-t3.large}"
 VOLUME_SIZE="${VOLUME_SIZE:-50}"
 GIT_REPO="${GIT_REPO:-git@github.com:Q-BFD/QCBM-LSTM.git}"
 GIT_BRANCH="${GIT_BRANCH:-automation}"
-GIT_USER_NAME="${GIT_USER_NAME:-qb-frontier}"
-GIT_USER_EMAIL="${GIT_USER_EMAIL:-qb-frontier@users.noreply.github.com}"
+# SSH 키 이름 설정 (CloudFormation에서 전달받거나 기본값 사용)
+# 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME (예: id_ed25519_github_username)
+SSH_KEY_NAME="${SSH_KEY_NAME:-id_ed25519_github_username}"
+
+# =====================================
+# 자동 사용자 이름 추출 함수
+# =====================================
+extract_username_from_key() {
+    local key_name="$1"
+    # 마지막 _ 뒤의 부분을 추출하고, _를 -로 변환
+    local username=$(echo "$key_name" | sed 's/.*_\([^_]*\)$/\1/' | tr '_' '-')
+    echo "$username"
+}
+
+# 자동으로 사용자 이름 설정
+DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
+GIT_USER_NAME="${GIT_USER_NAME:-$DEV_USERNAME}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-${DEV_USERNAME}@users.noreply.github.com}"
+
+log "🔑 SSH Key Name: $SSH_KEY_NAME"
+log "👤 Extracted Username: $DEV_USERNAME"
+log "📧 Git User: $GIT_USER_NAME <$GIT_USER_EMAIL>"
 
 # --- SSH 키 로드 ---
 # CloudFormation UserData에서 이미 키를 /home/ubuntu/.ssh/에 생성했습니다.
 # 이 스크립트는 해당 키를 읽어와서 변수에 할당하고 사용하기만 합니다.
 log "🚀 Loading SSH keys from /home/ubuntu/.ssh/..."
-SSH_PRIVATE_KEY_PATH="/home/ubuntu/.ssh/id_ed25519_github_qb_frontier"
-SSH_PUBLIC_KEY_PATH="/home/ubuntu/.ssh/id_ed25519_github_qb_frontier.pub"
+SSH_PRIVATE_KEY_PATH="/home/ubuntu/.ssh/${SSH_KEY_NAME}"
+SSH_PUBLIC_KEY_PATH="/home/ubuntu/.ssh/${SSH_KEY_NAME}.pub"
 
 if [ -f "$SSH_PRIVATE_KEY_PATH" ] && [ -f "$SSH_PUBLIC_KEY_PATH" ]; then
     SSH_PRIVATE_KEY=$(cat "${SSH_PRIVATE_KEY_PATH}")
@@ -358,7 +382,7 @@ if [ "${MOUNT_OK}" = true ]; then
     # Docker 이미지 빌드 (.infra 디렉토리에서 실행, 상위 디렉토리를 빌드 컨텍스트로 사용)
     log "🏗️ Building Docker image from .infra directory..."
     cd .infra
-    if docker build -f Dockerfile -t "${PROJECT_NAME}-dev" .. 2>&1 | stream_log; then
+    if docker build -f Dockerfile --build-arg DEV_USERNAME="${DEV_USERNAME}" -t "${PROJECT_NAME}-dev" .. 2>&1 | stream_log; then
         success_log "Docker image built successfully"
         
         # 기존 컨테이너 정리
@@ -374,12 +398,13 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 8888:8888 \
             -p 8080:8080 \
             -p 2222:22 \
-            -v "/mnt/data/${REPO_NAME}:/home/qb-frontier/${REPO_NAME}" \
+            -v "/mnt/data/${REPO_NAME}:/home/${DEV_USERNAME}/${REPO_NAME}" \
             -e "SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}" \
             -e "SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}" \
             -e "JUPYTER_TOKEN=qcbmtoken" \
             -e "GIT_USER_NAME=${GIT_USER_NAME}" \
             -e "GIT_USER_EMAIL=${GIT_USER_EMAIL}" \
+            -e "DEV_USERNAME=${DEV_USERNAME}" \
             -e "REPO_NAME=${REPO_NAME}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then

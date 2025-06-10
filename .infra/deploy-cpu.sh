@@ -4,6 +4,33 @@
 # Generic CPU Instance Deployment (Testing & Development)
 # =============================
 
+# =====================================
+# 🔑 SSH Key Configuration (사용자가 수정할 주요 설정)
+# =====================================
+# 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
+# 예: id_ed25519_github_yourname, id_rsa_company_yourname
+SSH_KEY_NAME="id_ed25519_github_yourname"  # 🔑 여기에 실제 키 이름을 입력하세요!
+
+# =====================================
+# 자동 사용자 이름 추출 함수
+# =====================================
+extract_username_from_key() {
+    local key_name="$1"
+    # 마지막 _ 뒤의 부분을 추출하고, _를 -로 변환
+    local username=$(echo "$key_name" | sed 's/.*_\([^_]*\)$/\1/' | tr '_' '-')
+    echo "$username"
+}
+
+# 자동으로 사용자 이름과 키 경로 설정
+DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
+SSH_PUBLIC_KEY_FILE="~/.ssh/${SSH_KEY_NAME}.pub"
+AWS_KEY_NAME="${DEV_USERNAME}-global-key"
+
+echo "🔑 SSH Key Name: $SSH_KEY_NAME"
+echo "👤 Extracted Username: $DEV_USERNAME" 
+echo "📁 SSH Public Key File: $SSH_PUBLIC_KEY_FILE"
+echo "🔐 AWS Key Name: $AWS_KEY_NAME"
+
 # --- Argument Parsing ---
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "📋 Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"
@@ -30,9 +57,9 @@ PROJECT_NAME="$1"
 INSTANCE_TYPE_PARAM="${2:-t3.large}"
 
 STACK_NAME="${PROJECT_NAME}-dev-cpu"
-# 🔑 모든 인스턴스에 사용할 고정된 키 페어 이름과 파일 경로
-KEY_NAME="qb-frontier-global-key"
-SSH_PUBLIC_KEY_FILE="~/.ssh/id_ed25519_github_qb_frontier.pub"
+# 🔑 자동으로 설정된 키 정보 사용
+KEY_NAME="$AWS_KEY_NAME"
+# SSH_PUBLIC_KEY_FILE은 이미 위에서 설정됨
 VOLUME_SIZE="50"  # Smaller storage for testing
 
 # --- Git Repository Configuration ---
@@ -142,6 +169,9 @@ aws cloudformation deploy \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
     GitBranch="$GIT_BRANCH" \
+    GitUserName="$DEV_USERNAME" \
+    GitUserEmail="${DEV_USERNAME}@users.noreply.github.com" \
+    SSHKeyName="$SSH_KEY_NAME" \
     SetupScriptOrg="$SETUP_SCRIPT_ORG" \
     SetupScriptRepo="$SETUP_SCRIPT_REPO" \
     SetupScriptBranch="$SETUP_SCRIPT_BRANCH" \

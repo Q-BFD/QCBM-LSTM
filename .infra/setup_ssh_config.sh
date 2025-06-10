@@ -36,11 +36,11 @@ PORT=22                                      # EC2 SSH 포트
 CONFIG_FILE="$HOME/.ssh/config"              # SSH 설정파일 경로
 
 # ⭐ 사용할 개인 SSH 키 파일 우선순위
-# 첫 번째로 발견되는 키를 EC2 및 컨테이너 접속에 모두 사용합니다.
-PERSONAL_SSH_KEY_FILES=(
-    "$HOME/.ssh/id_ed25519_github_qb_frontier"  # 🔑 주 개발 키 (최우선)
-    "$HOME/.ssh/id_ed25519"                      # 🔑 기본 ed25519 키
-    "$HOME/.ssh/id_rsa"                          # 🔑 RSA 키 (백업)
+  # 첫 번째로 발견되는 키를 EC2 및 컨테이너 접속에 모두 사용합니다.
+  # 🔑 주 개발 키가 있다면 첫 번째에 추가하세요 (예: "$HOME/.ssh/id_ed25519_github_yourname")
+  PERSONAL_SSH_KEY_FILES=(
+      "$HOME/.ssh/id_ed25519"                      # 🔑 기본 ed25519 키
+      "$HOME/.ssh/id_rsa"                          # 🔑 RSA 키 (백업)
     "$HOME/.ssh/id_ecdsa"                        # 🔑 ECDSA 키 (백업)
 )
 
@@ -145,7 +145,7 @@ Host ${ALIAS_NAME}
 # ${PROJECT_NAME} Development Environment - Docker Container
 Host ${ALIAS_NAME}-container
     HostName ${EIP}
-    User qb-frontier
+            User your-username  # deploy-cpu.sh에서 추출된 사용자 이름으로 설정
     Port 2222
     IdentityFile ${PRIMARY_SSH_KEY}
     IdentitiesOnly yes
