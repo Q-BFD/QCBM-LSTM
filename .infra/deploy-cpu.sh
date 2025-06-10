@@ -9,7 +9,7 @@
 # =====================================
 # 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
 # 예: id_ed25519_github_yourname, id_rsa_company_yourname
-SSH_KEY_NAME="id_ed25519_github_yourname"  # 🔑 여기에 실제 키 이름을 입력하세요!
+SSH_KEY_NAME="id_ed25519_github_qb_frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
 
 # =====================================
 # 자동 사용자 이름 추출 함수
