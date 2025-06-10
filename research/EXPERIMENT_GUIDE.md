@@ -1,9 +1,96 @@
 # 실험 설정 및 실행 가이드
 
+## ⚡ **빠른 시작 체크리스트**
+
+### **🎯 최소 5분 설정**
+```bash
+# 1. 데이터 폴더 확인
+ls data/KRAS_G12D/ && ls data/valid_filter/
+# ✅ 파일들이 보이면 OK, 없으면 관리자에게 요청
+
+# 2. 기본 실행 테스트
+bash sh/run.sh --help
+# ✅ 도움말이 나오면 설정 완료
+
+# 3. 빠른 테스트 (선택사항)
+bash sh/run.sh fast_test
+# ✅ 3 에폭 빠른 실험으로 동작 확인
+
+# 4. WandB 설정 (선택사항)
+wandb login
+# ✅ API Key 입력하면 실시간 모니터링 가능
+```
+
+### **❗ 문제 해결**
+```bash
+# 데이터 파일 없음 → 관리자에게 data 폴더 요청
+# Import 오류 → 위 체크리스트로 확인
+# WandB 오류 → 오프라인 모드: WANDB_MODE=offline bash sh/run.sh
+```
+
+---
+
+## 🚀 **시작하기 전 필수 설정**
+
+### **📁 데이터셋 설정 (중요!)**
+
+**⚠️ data 폴더는 Git에서 관리되지 않으므로 별도로 설정해야 합니다!**
+
+#### **1단계: 데이터 폴더 구조 확인**
+```bash
+# 필요한 데이터 폴더 구조:
+research/
+└── data/
+    ├── KRAS_G12D/
+    │   └── 1Mstoned_vsc_initial_dataset_insilico_chemistry42_filtered.csv
+    └── valid_filter/
+        ├── mcf.csv
+        ├── pains.txt
+        └── wehi_pains.txt
+```
+
+#### **2단계: 데이터 파일 확보**
+```bash
+# 관리자에게 다음 파일들을 요청하세요:
+
+# 🧬 메인 데이터셋 (필수)
+data/KRAS_G12D/1Mstoned_vsc_initial_dataset_insilico_chemistry42_filtered.csv
+
+# 🔬 필터링 데이터 (필수)
+data/valid_filter/mcf.csv           # MCF 필터 데이터
+data/valid_filter/pains.txt         # PAINS 필터 패턴
+data/valid_filter/wehi_pains.txt    # WEHI PAINS 필터 패턴
+```
+
+#### **3단계: 데이터 설치 확인**
+```bash
+# 데이터 파일 존재 확인
+ls -la data/KRAS_G12D/
+ls -la data/valid_filter/
+
+# 파일 크기 확인 (대략적인 기준)
+# 1Mstoned_vsc_initial_dataset... : ~50MB
+# mcf.csv : ~1KB
+# pains.txt : ~50KB  
+# wehi_pains.txt : ~200KB
+```
+
+#### **4단계: 데이터 없을 시 발생하는 오류**
+```bash
+# 이런 오류가 나면 데이터 파일이 없는 것입니다:
+FileNotFoundError: [Errno 2] No such file or directory: '.../data/valid_filter/mcf.csv'
+FileNotFoundError: [Errno 2] No such file or directory: '.../data/KRAS_G12D/...'
+```
+
+---
+
 ## 📁 프로젝트 구조
 
 ```
 research/
+├── data/                                 # 🚨 Git 미관리 - 별도 설정 필요!
+│   ├── KRAS_G12D/                        # 메인 데이터셋
+│   └── valid_filter/                     # 필터링 데이터
 ├── python/
 │   ├── settings/
 │   │   ├── __init__.py
@@ -301,13 +388,30 @@ WANDB_MODE=offline bash sh/run.sh
 
 ## ✅ 검증된 동작 확인
 
-- ✅ 부분 설정 파일 로드 (일부 값만 오버라이드)
-- ✅ 기본값 자동 적용
-- ✅ JSON 형식 유효성 검사
-- ✅ 실험별 결과 디렉토리 자동 생성
-- ✅ 임시 파일 자동 정리
+### **🔧 시스템 요구사항**
+- ✅ **데이터셋 설정**: data 폴더 및 필수 파일들 존재
+- ✅ **경로 문제 해결**: valid_filter 디렉토리 경로 수정
+- ✅ **파일명 오타 수정**: compound_stat.py 이름 수정
+
+### **⚙️ 설정 시스템**
+- ✅ **부분 설정 파일 로드** (일부 값만 오버라이드)
+- ✅ **기본값 자동 적용** (JSON 파일 없어도 실행 가능)
+- ✅ **JSON 형식 유효성 검사**
+- ✅ **단순화된 설정 구조** (중복 제거)
+
+### **📁 실험 관리**
+- ✅ **실험별 결과 디렉토리 자동 생성**
 - ✅ **단순화된 폴더 구조** (필요할 때만 생성)
+- ✅ **임시 파일 자동 정리**
+
+### **📊 모니터링 시스템**
 - ✅ **WandB 실시간 모니터링** (온라인/오프라인 지원)
+- ✅ **자동 실험 추적** (메트릭, 이미지, 하이퍼파라미터)
+
+### **🧪 실험 스크립트**
+- ✅ **기본값 실행**: `bash sh/run.sh`
+- ✅ **커스텀 설정**: `bash sh/run.sh temp_test`
+- ✅ **자동 실험**: `bash sh/run_temperature_experiment.sh`
 
 ---
 
