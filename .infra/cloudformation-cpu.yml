@@ -81,48 +81,48 @@ Parameters:
 Mappings:
   # AMI mappings for different architectures in ap-northeast-2 (Seoul)
   ArchitectureMap:
-    # x86_64 instance types
+    # x86_64 instance types (Ubuntu 22.04 LTS)
     t3.medium:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     t3.large:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     t3.xlarge:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     t3.2xlarge:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     m5.large:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     m5.xlarge:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     m5.2xlarge:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     c5.large:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
     c5.xlarge:
-      AMI: ami-08943a151bd468f4e
-    # ARM64 instance types (Graviton)
-    t4g.medium:
-      AMI: ami-086cae3329a3f7d75
-    t4g.large:
-      AMI: ami-086cae3329a3f7d75
-    t4g.xlarge:
-      AMI: ami-086cae3329a3f7d75
-    t4g.2xlarge:
-      AMI: ami-086cae3329a3f7d75
-    m6g.large:
-      AMI: ami-086cae3329a3f7d75
-    m6g.xlarge:
-      AMI: ami-086cae3329a3f7d75
-    m6g.2xlarge:
-      AMI: ami-086cae3329a3f7d75
-    c6g.large:
-      AMI: ami-086cae3329a3f7d75
-    c6g.xlarge:
-      AMI: ami-086cae3329a3f7d75
-    c7g.2xlarge:
-      AMI: ami-086cae3329a3f7d75
+      AMI: ami-0c9c942bd7bf113a2
     m7i.4xlarge:
-      AMI: ami-08943a151bd468f4e
+      AMI: ami-0c9c942bd7bf113a2
+    # ARM64 instance types (Ubuntu 22.04 LTS - Graviton)
+    t4g.medium:
+      AMI: ami-01123b84e2a4fba05
+    t4g.large:
+      AMI: ami-01123b84e2a4fba05
+    t4g.xlarge:
+      AMI: ami-01123b84e2a4fba05
+    t4g.2xlarge:
+      AMI: ami-01123b84e2a4fba05
+    m6g.large:
+      AMI: ami-01123b84e2a4fba05
+    m6g.xlarge:
+      AMI: ami-01123b84e2a4fba05
+    m6g.2xlarge:
+      AMI: ami-01123b84e2a4fba05
+    c6g.large:
+      AMI: ami-01123b84e2a4fba05
+    c6g.xlarge:
+      AMI: ami-01123b84e2a4fba05
+    c7g.2xlarge:
+      AMI: ami-01123b84e2a4fba05
 
 Resources:
   ProjectSecurityGroup:
