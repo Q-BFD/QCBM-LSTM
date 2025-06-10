@@ -9,17 +9,18 @@ set -e  # Exit on any error
 # Configuration Section
 # =============================================================================
 
-# Default experiment settings
-DEFAULT_CONFIG="./settings/benchmark_models_settings_qcbm.json"
+# Script settings
 PYTHON_DIR="./python"
 MAIN_SCRIPT="main.py"
 
-# Experiment configurations - Add more as needed
+# Experiment configurations
+# Leave empty ("") to use default values from TrainingArgs class
+# Specify JSON path for custom overrides
 declare -A EXPERIMENTS
-EXPERIMENTS[default]=""  # Use default values from TrainingArgs
-EXPERIMENTS[qcbm]=""     # Use default values from TrainingArgs
-# EXPERIMENTS[classical]="./python/settings/classical_config.json"  # Optional override configs
-# EXPERIMENTS[test]="./python/settings/test_config.json"             # Optional override configs
+EXPERIMENTS[default]=""                                               # Use all default values from TrainingArgs
+EXPERIMENTS[qcbm]=""                                                  # Use all default values from TrainingArgs  
+EXPERIMENTS[temp_test]="./python/settings/temp_experiment.json"      # Temperature override example
+EXPERIMENTS[fast_test]="./python/settings/fast_test.json"            # Quick test example
 
 # =============================================================================
 # Helper Functions
@@ -30,13 +31,20 @@ show_usage() {
     echo ""
     echo "Available experiments:"
     for exp in "${!EXPERIMENTS[@]}"; do
-        echo "  - $exp: ${EXPERIMENTS[$exp]}"
+        if [[ -z "${EXPERIMENTS[$exp]}" ]]; then
+            echo "  - $exp: (uses default values from TrainingArgs)"
+        else
+            echo "  - $exp: ${EXPERIMENTS[$exp]}"
+        fi
     done
     echo ""
     echo "Examples:"
-    echo "  bash sh/run.sh                    # Run default experiment"
-    echo "  bash sh/run.sh qcbm              # Run QCBM experiment"
-    echo "  bash sh/run.sh default --help    # Show help"
+    echo "  bash sh/run.sh                    # Run with all default values"
+    echo "  bash sh/run.sh default          # Run with all default values"
+    echo "  bash sh/run.sh --help           # Show this help"
+    echo ""
+    echo "To add custom experiments, edit the EXPERIMENTS array in this script:"
+    echo "  EXPERIMENTS[my_exp]=\"./python/settings/my_config.json\""
     echo ""
     echo "Additional arguments will be passed directly to main.py"
 }

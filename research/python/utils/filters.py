@@ -561,8 +561,8 @@ def apply_filters(mol, max_mol_weight=800):
 # DataFrame.append() 가 사라져 append() 대신 pd.concat() 을 사용
 # Get the research root directory (3 levels up from this file)
 _research_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_mcf = pd.read_csv(os.path.join(_research_root, 'data/valid-filter/mcf.csv'))
-_pains = pd.read_csv(os.path.join(_research_root, 'data/valid-filter/wehi_pains.csv'), names=['smarts', 'names'])
+_mcf = pd.read_csv(os.path.join(_research_root, 'data/valid_filter/mcf.csv'))
+_pains = pd.read_csv(os.path.join(_research_root, 'data/valid_filter/wehi_pains.txt'), names=['smarts', 'names'])
 combined_filters_df = pd.concat([_mcf, _pains], ignore_index=True)
 # SMARTS 문자열을 RDKit Mol 객체로 변환
 _filters = [Chem.MolFromSmarts(x) for x in combined_filters_df['smarts'].values]
@@ -584,7 +584,7 @@ def passes_wehi_mcf(mol):
 
 # PAINS 필터 적용
 
-inf = open(os.path.join(_research_root, "data/valid-filter/pains.txt"), "r")
+inf = open(os.path.join(_research_root, "data/valid_filter/pains.txt"), "r")
 sub_strct = [ line.rstrip().split(" ") for line in inf ]
 smarts = [ line[0] for line in sub_strct]
 desc = [ line[1] for line in sub_strct]
