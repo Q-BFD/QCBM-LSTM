@@ -16,10 +16,10 @@ MAIN_SCRIPT="main.py"
 
 # Experiment configurations - Add more as needed
 declare -A EXPERIMENTS
-EXPERIMENTS[default]="./settings/benchmark_models_settings_qcbm.json"
-EXPERIMENTS[qcbm]="./settings/benchmark_models_settings_qcbm.json"
-# EXPERIMENTS[classical]="./settings/benchmark_models_settings_classical.json"
-# EXPERIMENTS[test]="./settings/test_settings.json"
+EXPERIMENTS[default]="./python/settings/benchmark_models_settings_qcbm.json"
+EXPERIMENTS[qcbm]="./python/settings/benchmark_models_settings_qcbm.json"
+# EXPERIMENTS[classical]="./python/settings/benchmark_models_settings_classical.json"
+# EXPERIMENTS[test]="./python/settings/test_settings.json"
 
 # =============================================================================
 # Helper Functions
@@ -56,8 +56,8 @@ check_environment() {
     fi
     
     # Check if config directory exists
-    if [[ ! -d "settings" ]]; then
-        echo "Error: settings directory not found"
+    if [[ ! -d "python/settings" ]]; then
+        echo "Error: python/settings directory not found"
         exit 1
     fi
 }
