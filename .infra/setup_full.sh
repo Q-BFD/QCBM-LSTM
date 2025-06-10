@@ -380,12 +380,13 @@ if [ "${MOUNT_OK}" = true ]; then
             -p 8888:8888 \
             -p 8080:8080 \
             -p 2222:22 \
-            -v "/mnt/data/${REPO_NAME}:/home/qb-frontier" \
+            -v "/mnt/data/${REPO_NAME}:/home/qb-frontier/${REPO_NAME}" \
             -e "SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY}" \
             -e "SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY}" \
             -e "JUPYTER_TOKEN=qcbmtoken" \
             -e "GIT_USER_NAME=${GIT_USER_NAME}" \
             -e "GIT_USER_EMAIL=${GIT_USER_EMAIL}" \
+            -e "REPO_NAME=${REPO_NAME}" \
             --restart unless-stopped \
             "${PROJECT_NAME}-dev"; then
             success_log "Docker container started successfully"

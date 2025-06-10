@@ -58,8 +58,9 @@ log_start "Starting SSH server..."
 
 # JupyterLab 시작
 log_start "Starting JupyterLab..."
+NOTEBOOK_DIR="/home/qb-frontier/${REPO_NAME:-QCBM-LSTM}"
 su - qb-frontier -c "JUPYTER_TOKEN=${JUPYTER_TOKEN} jupyter lab \
     --ip=0.0.0.0 \
     --port=8888 \
     --no-browser \
-    --notebook-dir=/home/qb-frontier"
+    --notebook-dir=${NOTEBOOK_DIR}"

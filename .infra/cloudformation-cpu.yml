@@ -18,13 +18,23 @@ Parameters:
       - t3.large
       - t3.xlarge
       - t3.2xlarge
+      - t4g.medium
+      - t4g.large
+      - t4g.xlarge
+      - t4g.2xlarge
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - m7i.4xlarge
+      - m6g.large
+      - m6g.xlarge
+      - m6g.2xlarge
       - c5.large
       - c5.xlarge
-    Description: CPU instance type for testing (no GPU quota required)
+      - c6g.large
+      - c6g.xlarge
+      - c7g.2xlarge
+      - m7i.4xlarge
+    Description: CPU instance type for testing (supports both x86_64 and ARM64 architectures)
   VolumeSize:
     Type: Number
     Default: 50
@@ -68,6 +78,52 @@ Parameters:
     AllowedPattern: ^[a-zA-Z0-9/_.-]+$
     ConstraintDescription: Setup script path must be a valid file path and is required
 
+Mappings:
+  # AMI mappings for different architectures in ap-northeast-2 (Seoul)
+  ArchitectureMap:
+    # x86_64 instance types
+    t3.medium:
+      AMI: ami-08943a151bd468f4e
+    t3.large:
+      AMI: ami-08943a151bd468f4e
+    t3.xlarge:
+      AMI: ami-08943a151bd468f4e
+    t3.2xlarge:
+      AMI: ami-08943a151bd468f4e
+    m5.large:
+      AMI: ami-08943a151bd468f4e
+    m5.xlarge:
+      AMI: ami-08943a151bd468f4e
+    m5.2xlarge:
+      AMI: ami-08943a151bd468f4e
+    c5.large:
+      AMI: ami-08943a151bd468f4e
+    c5.xlarge:
+      AMI: ami-08943a151bd468f4e
+    # ARM64 instance types (Graviton)
+    t4g.medium:
+      AMI: ami-086cae3329a3f7d75
+    t4g.large:
+      AMI: ami-086cae3329a3f7d75
+    t4g.xlarge:
+      AMI: ami-086cae3329a3f7d75
+    t4g.2xlarge:
+      AMI: ami-086cae3329a3f7d75
+    m6g.large:
+      AMI: ami-086cae3329a3f7d75
+    m6g.xlarge:
+      AMI: ami-086cae3329a3f7d75
+    m6g.2xlarge:
+      AMI: ami-086cae3329a3f7d75
+    c6g.large:
+      AMI: ami-086cae3329a3f7d75
+    c6g.xlarge:
+      AMI: ami-086cae3329a3f7d75
+    c7g.2xlarge:
+      AMI: ami-086cae3329a3f7d75
+    m7i.4xlarge:
+      AMI: ami-08943a151bd468f4e
+
 Resources:
   ProjectSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -100,7 +156,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: ami-08943a151bd468f4e # Ubuntu 22.04 (seoul)
+      ImageId: !FindInMap [ArchitectureMap, !Ref InstanceType, AMI]
       AvailabilityZone: !Select [0, !GetAZs '']
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
