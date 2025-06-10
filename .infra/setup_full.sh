@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # 로깅을 위해 프로젝트 이름을 미리 파싱합니다.
 PROJECT_NAME_ARG=$(echo "$@" | grep -oP '(?<=--project\s)\S+')
@@ -17,6 +18,14 @@ error_log() {
 
 success_log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" | tee -a "${LOG_FILE}"
+}
+
+# 다중 라인 출력을 스트리밍하기 위한 로깅 함수
+stream_log() {
+    # 로그의 각 줄에 타임스탬프와 구분자를 추가합니다.
+    while IFS= read -r line; do
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] | $line" | tee -a "${LOG_FILE}"
+    done
 }
 
 # --- 디버깅: EC2 사용자 데이터 컨텍스트 로깅 ---
@@ -355,7 +364,7 @@ if [ "${MOUNT_OK}" = true ]; then
     
     # Docker 이미지 빌드
     log "🏗️ Building Docker image..."
-    if docker build -t "${PROJECT_NAME}-dev" .; then
+    if docker build -t "${PROJECT_NAME}-dev" . 2>&1 | stream_log; then
         success_log "Docker image built successfully"
         
         # 기존 컨테이너 정리
@@ -394,7 +403,7 @@ if [ "${MOUNT_OK}" = true ]; then
             exit 1
         fi
     else
-        error_log "Failed to build Docker image"
+        error_log "Failed to build Docker image. Check the log above for details."
         exit 1
     fi
 else
