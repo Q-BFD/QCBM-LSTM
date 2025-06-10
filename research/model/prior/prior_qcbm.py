@@ -234,10 +234,16 @@ class SingleBasisQCBM:
             # target_probs[index] = y
 
         # 최적화 루프
-        with tqdm(total=n_epochs, desc="Training Epochs", file=sys.stdout, miniters=1) as pbar:
+        print(f"Training QCBM for {n_epochs} epochs...")
+        with tqdm(
+            total=n_epochs, 
+            desc="Training QCBM", 
+            ncols=80,
+            leave=True,
+            ascii=True,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}'
+        ) as pbar:
             for epoch in range(n_epochs):
-                
-
                 # 현재 파라미터에 대해 loss 최소화
                 result = self.optimizer.minimize(
                     self.loss_fn,
@@ -249,14 +255,15 @@ class SingleBasisQCBM:
 
                 self.params = result.x # 다음 단계의 초기값으로 넘김
                 loss_values.append(result.fun)
-                # loss_values.append(self.loss_fn(self.params, sampler, backend, target_probs))
                 
-                pbar.set_description(f"Epoch {epoch+1}/{n_epochs}")
-                pbar.set_postfix(loss=result.fun)
+                pbar.set_postfix(loss=f"{result.fun:.6f}")
                 pbar.update()
-                # tqdm.write(f"[Epoch {epoch+1}/{n_epochs}] Loss: {result.fun:.10f}")
-                # Progress bar 업데이트
-            
+                
+                # Print progress every 5 epochs as backup
+                if (epoch + 1) % 5 == 0:
+                    print(f"  QCBM Epoch {epoch + 1}/{n_epochs}, Loss: {result.fun:.6f}")
+        
+        print(f"✅ QCBM training completed. Final loss: {loss_values[-1]:.6f}")
         return result,loss_values
 
     def generate(self, num_samples, sampler, backend):

@@ -81,7 +81,19 @@ def main():
         print("[Step 1/6] Training LSTM model...")
         model.train()
         
-        with tqdm(total=len(dataloader), desc="Training", leave=False, dynamic_ncols=True) as pbar:
+        epoch_losses = []
+        print(f"Training on {len(dataloader)} batches...")
+        
+        # Use tqdm with better settings for remote/SSH environments
+        with tqdm(
+            total=len(dataloader), 
+            desc="Training LSTM", 
+            ncols=100,
+            leave=True,
+            position=0,
+            ascii=True,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}'
+        ) as pbar:
             for batch_idx, batch in enumerate(dataloader):
                 inputs = batch
                 batch_size = inputs.size(0)
@@ -91,9 +103,16 @@ def main():
                 
                 # Train LSTM
                 batch_result = model.train_on_batch(inputs, prior_samples)
+                epoch_losses.append(batch_result['loss'])
                 
                 pbar.set_postfix({"Loss": f"{batch_result['loss']:.4f}"})
                 pbar.update()
+                
+                # Print progress every 10 batches as backup
+                if (batch_idx + 1) % 10 == 0:
+                    print(f"  Batch {batch_idx + 1}/{len(dataloader)}, Loss: {batch_result['loss']:.4f}")
+        
+        print(f"✅ LSTM training completed. Average loss: {sum(epoch_losses)/len(epoch_losses):.4f}")
         
         # -------------------------------------------------------------------------
         # Generation and Evaluation Phase
@@ -131,6 +150,9 @@ def main():
             sampler=None, backend=None, 
             n_epochs=args.prior_n_epochs
         )
+        
+        # Extract prior model loss
+        prior_loss = result[1][-1] if len(result) > 1 and len(result[1]) > 0 else None
         
         # -------------------------------------------------------------------------
         # Final Generation and Evaluation
@@ -178,7 +200,15 @@ def main():
         print_epoch_summary(epoch, compound_stats, epoch_time)
         
         # Log metrics to WandB
-        log_epoch_metrics(epoch, compound_stats, epoch_time)
+        additional_metrics = {
+            "training/lstm_loss": sum(epoch_losses) / len(epoch_losses),
+            "training/batch_count": len(dataloader)
+        }
+        
+        if prior_loss is not None:
+            additional_metrics["training/prior_loss"] = prior_loss
+        
+        log_epoch_metrics(epoch, compound_stats, epoch_time, additional_metrics)
         log_molecules_to_wandb(epoch, compound_stats, dirs['plots'])
     
     # =============================================================================
