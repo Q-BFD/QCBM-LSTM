@@ -50,7 +50,7 @@ from qiskit_ibm_runtime import QiskitRuntimeService, Session, Sampler # Quantum 
 from model.prior.prior_cls import RandomChoiceSampler # Prior sampling
 from model.prior.prior_qcbm import SingleBasisQCBM, QCBMAnsatz, ScipyOptimizer # QCBM related
 
-
+print(f"\n========== Start script ==========")
 ### Command line arguments ###------------------------------------------------
 
 # python qb-kras_v1.py --config_file ./settings/benchmark_models_settings_qcbm.json
@@ -103,6 +103,8 @@ object_loaded = load_obj(f"{path_to_pickle_data}.pkl")
 selfies = object_loaded[1] # Selfies Encoding class
 train_compounds = selfies.valid_smiles # 유효한 SMILES 문자열 리스트
 data = object_loaded[0]
+print(f"\n========== Object loaded ==========")
+
 
 dataloader = (
     new_data_loader(
@@ -167,6 +169,7 @@ diversity_fn = get_diversity
 decoder_fn = selfies.decode_fn 
 truncate_fn = truncate_smiles
 
+print(f"\n========== Define functions ==========")
 ### Prior model ###------------------------------------------------
 
 if prior_model == "classical":
