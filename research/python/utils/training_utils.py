@@ -331,7 +331,7 @@ def create_lstm_model(args, selfies):
         vocab_size=selfies.num_emd,
         seq_len=selfies.max_length,
         sos_token_index=selfies.start_char_index,
-        prior_sample_dim=args.prior_size,
+        prior_sample_dim=args.num_qubits,
         padding_token_index=selfies.pad_char_index,
         hidden_dim=args.hidden_dim,
         embedding_dim=args.embedding_dim,
