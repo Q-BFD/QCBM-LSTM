@@ -102,7 +102,6 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       ImageId: ami-0c9c942bd7bf113a2
-      AvailabilityZone: !Select [0, !GetAZs '']
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
       BlockDeviceMappings:
