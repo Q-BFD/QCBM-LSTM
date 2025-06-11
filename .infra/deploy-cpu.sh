@@ -5,11 +5,77 @@
 # =============================
 
 # =====================================
-# 🔑 SSH Key Configuration (사용자가 수정할 주요 설정)
+# 사용법 표시 함수
 # =====================================
-# 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
-# 예: id_ed25519_github_yourname, id_rsa_company_yourname
-SSH_KEY_NAME="id_ed25519_github_qb-frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
+show_usage() {
+    echo "📋 Usage: $0 PROJECT_NAME [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -k, --ssh-key KEY_NAME    SSH 키 이름 (필수)"
+    echo "  -h, --help               도움말 표시"
+    echo ""
+    echo "Examples:"
+    echo "  $0 qcbm --ssh-key id_ed25519_github_john-doe"
+    echo "  $0 myproject -k id_rsa_company_alice-kim"
+    echo "  $0 qcbm -k /custom/path/my_key_ed25519_github_alice-kim"
+    echo ""
+    echo "🔑 SSH 키 네이밍 규칙:"
+    echo "  패턴: id_[키타입]_[서비스]_[사용자이름]"
+    echo "  ⚠️  사용자 이름 부분에 underscore(_) 사용 금지!"
+    echo ""
+    echo "  ✅ 올바른 예시:"
+    echo "    - id_ed25519_github_john-doe"
+    echo "    - id_rsa_company_alice-kim"
+    echo ""
+    echo "  ❌ 잘못된 예시:"
+    echo "    - id_ed25519_github_john_doe  (underscore 사용)"
+    exit 0
+}
+
+# =====================================
+# 인자 파싱
+# =====================================
+PROJECT_NAME=""
+SSH_KEY_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -k|--ssh-key)
+            SSH_KEY_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            ;;
+        -*)
+            echo "❌ 알 수 없는 옵션: $1"
+            echo "도움말: $0 --help"
+            exit 1
+            ;;
+        *)
+            if [ -z "$PROJECT_NAME" ]; then
+                PROJECT_NAME="$1"
+            else
+                echo "❌ 너무 많은 인자: $1"
+                echo "도움말: $0 --help"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# 필수 인자 검증
+if [ -z "$PROJECT_NAME" ]; then
+    echo "❌ ERROR: PROJECT_NAME이 필요합니다."
+    show_usage
+fi
+
+if [ -z "$SSH_KEY_NAME" ]; then
+    echo "❌ ERROR: SSH 키 이름이 필요합니다."
+    echo "   예: $0 $PROJECT_NAME --ssh-key id_ed25519_github_yourname"
+    show_usage
+fi
 
 # =====================================
 # 자동 사용자 이름 추출 함수
@@ -30,131 +96,153 @@ extract_username_from_key() {
     echo "$username_part"
 }
 
-# 자동으로 사용자 이름과 키 경로 설정
-DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
-SSH_PUBLIC_KEY_FILE="~/.ssh/${SSH_KEY_NAME}.pub"
-AWS_KEY_NAME="${DEV_USERNAME}-global-key"
-
+# =====================================
+# SSH 키 검증 및 사용자 확인
+# =====================================
 echo "🔑 SSH Key Name: $SSH_KEY_NAME"
-echo "👤 Extracted Username: $DEV_USERNAME" 
-echo "📁 SSH Public Key File: $SSH_PUBLIC_KEY_FILE"
-echo "🔐 AWS Key Name: $AWS_KEY_NAME"
 
-# --- Argument Parsing ---
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"
+# 사용자 이름 추출 (경로에서 키 이름만 추출)
+if [[ "$SSH_KEY_NAME" == *"/"* ]]; then
+    # Full path인 경우 파일명만 추출
+    KEY_BASENAME=$(basename "$SSH_KEY_NAME")
+else
+    # 키 이름만인 경우 그대로 사용
+    KEY_BASENAME="$SSH_KEY_NAME"
+fi
+
+DEV_USERNAME=$(extract_username_from_key "$KEY_BASENAME")
+echo "👤 Extracted Username: $DEV_USERNAME"
+
+# SSH 키 파일 경로 설정 (유연한 경로 지원)
+if [[ "$SSH_KEY_NAME" == *"/"* ]]; then
+    # Full path가 주어진 경우
+    if [[ "$SSH_KEY_NAME" == *".pub" ]]; then
+        # .pub 파일 경로가 주어진 경우
+        SSH_PUBLIC_KEY_FILE="$SSH_KEY_NAME"
+        SSH_PRIVATE_KEY_FILE="${SSH_KEY_NAME%.pub}"
+    else
+        # 개인 키 경로가 주어진 경우
+        SSH_PRIVATE_KEY_FILE="$SSH_KEY_NAME"
+        SSH_PUBLIC_KEY_FILE="${SSH_KEY_NAME}.pub"
+    fi
+else
+    # 키 이름만 주어진 경우 (기본 ~/.ssh/ 경로 사용)
+    SSH_PUBLIC_KEY_FILE="~/.ssh/${SSH_KEY_NAME}.pub"
+    SSH_PRIVATE_KEY_FILE="~/.ssh/${SSH_KEY_NAME}"
+fi
+
+# 키 파일 존재 여부 확인
+EXPANDED_PUBLIC_KEY=$(eval echo "$SSH_PUBLIC_KEY_FILE")
+EXPANDED_PRIVATE_KEY=$(eval echo "$SSH_PRIVATE_KEY_FILE")
+
+if [ ! -f "$EXPANDED_PUBLIC_KEY" ]; then
+    echo "❌ ERROR: SSH 공개 키 파일을 찾을 수 없습니다: $EXPANDED_PUBLIC_KEY"
+    echo "   키를 생성하거나 경로를 확인하세요."
     echo ""
-    echo "Examples:"
-    echo "   $0 qcbm          # Deploy 'qcbm' with default instance type (t3.large)"
-    echo "   $0 myproject t3.medium  # Deploy 'myproject' with t3.medium"
-    echo ""
-    echo "📦 This will create:"
-    echo "   - Stack: {PROJECT_NAME}-dev-cpu"
-    echo "   - Key Pair: {PROJECT_NAME}-dev-key"
-    echo "   - Resources tagged with project name"
+    echo "💡 사용법:"
+    echo "   키 이름만: --ssh-key id_ed25519_github_yourname"
+    echo "   Full path: --ssh-key /path/to/your/key"
+    exit 1
+fi
+
+if [ ! -f "$EXPANDED_PRIVATE_KEY" ]; then
+    echo "❌ ERROR: SSH 개인 키 파일을 찾을 수 없습니다: $EXPANDED_PRIVATE_KEY"
+    echo "   키를 생성하거나 경로를 확인하세요."
+    exit 1
+fi
+
+echo "✅ SSH 키 파일 확인 완료"
+echo "📁 SSH Public Key File: $SSH_PUBLIC_KEY_FILE"
+echo "📁 SSH Private Key File: $SSH_PRIVATE_KEY_FILE"
+
+# =====================================
+# 사용자 확인 프롬프트
+# =====================================
+echo ""
+echo "🎯 배포 정보 확인:"
+echo "   📦 프로젝트 이름: $PROJECT_NAME"
+echo "   🔑 SSH 키: $SSH_KEY_NAME"
+echo "   👤 컨테이너 사용자: $DEV_USERNAME"
+echo "   🖥️  스택 이름: ${PROJECT_NAME}-dev-cpu"
+echo ""
+read -p "🚀 위 설정으로 배포를 진행하시겠습니까? (y/N): " -r
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "❌ 배포가 취소되었습니다."
     exit 0
 fi
 
-if [ -z "$1" ]; then
-    echo "❌ Error: Project name is required."
-    echo "Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"
-    exit 1
-fi
+# 자동으로 AWS 키 이름과 Git 정보 설정
+AWS_KEY_NAME="${DEV_USERNAME}-global-key"
+DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
+GIT_USER_NAME="${DEV_USERNAME}"
+GIT_USER_EMAIL="${DEV_USERNAME}@users.noreply.github.com"
 
-PROJECT_NAME="$1"
-# Set INSTANCE_TYPE from the second argument, or default to t3.large
-INSTANCE_TYPE_PARAM="${2:-t3.large}"
-
-STACK_NAME="${PROJECT_NAME}-dev-cpu"
-# 🔑 자동으로 설정된 키 정보 사용
-KEY_NAME="$AWS_KEY_NAME"
-# SSH_PUBLIC_KEY_FILE은 이미 위에서 설정됨
-VOLUME_SIZE="50"  # Smaller storage for testing
-
-# --- Git Repository Configuration ---
-# Try to dynamically detect the Git repository URL and branch from the current directory
-if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    # Detect remote URL
-    GIT_REMOTE_URL=$(git config --get remote.origin.url)
-    
-    # If the URL is HTTPS, convert it to SSH format for consistency
-    if [[ "${GIT_REMOTE_URL}" == https://* ]]; then
-        echo "🔄 Converting detected HTTPS remote to SSH format..."
-        GIT_REMOTE_URL=$(echo "${GIT_REMOTE_URL}" | sed -E 's|https://([^/]+)/|git@\1:|')
+# Git 정보 자동 감지
+if git remote get-url origin >/dev/null 2>&1; then
+    GIT_REPOSITORY=$(git remote get-url origin)
+    if [[ "$GIT_REPOSITORY" == https://* ]]; then
+        # HTTPS URL을 SSH 형식으로 변환
+        GIT_REPOSITORY=$(echo "$GIT_REPOSITORY" | sed -E 's|https://([^/]+)/|git@\1:|')
     fi
-
-    if [ -n "$GIT_REMOTE_URL" ]; then
-        echo "✅ Dynamically detected Git repository: $GIT_REMOTE_URL"
-        GIT_REPOSITORY="$GIT_REMOTE_URL"
-    else
-        echo "⚠️  Could not detect git remote 'origin'. Using default repository."
-        GIT_REPOSITORY="git@github.com:Q-BFD/QCBM-LSTM.git"
-    fi
-
-    # Detect current branch and set it as default
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ -n "$CURRENT_BRANCH" ]; then
-        echo "✅ Dynamically detected Git branch: $CURRENT_BRANCH"
-        GIT_BRANCH="$CURRENT_BRANCH"
-    else
-        echo "⚠️  Could not detect current branch. Using default 'automation'."
-        GIT_BRANCH="automation"
-    fi
+    echo "✅ Dynamically detected Git repository: $GIT_REPOSITORY"
 else
-    echo "⚠️  Not inside a Git repository. Using default repository and branch."
     GIT_REPOSITORY="git@github.com:Q-BFD/QCBM-LSTM.git"
-    GIT_BRANCH="automation"
+    echo "⚠️  Could not detect Git repository, using default: $GIT_REPOSITORY"
 fi
 
-# Parse setup script information from Git repository
-SETUP_SCRIPT_PATH=".infra/setup_full.sh"
+if git branch --show-current >/dev/null 2>&1; then
+    GIT_BRANCH=$(git branch --show-current)
+    echo "✅ Dynamically detected Git branch: $GIT_BRANCH"
+else
+    GIT_BRANCH="automation"
+    echo "⚠️  Could not detect Git branch, using default: $GIT_BRANCH"
+fi
 
-# Parse organization and repository from Git URL
-if [[ $GIT_REPOSITORY =~ github\.com[/:]([^/]+)/([^/]+)\.git ]]; then
-    SETUP_SCRIPT_ORG="${BASH_REMATCH[1]}"
-    SETUP_SCRIPT_REPO="${BASH_REMATCH[2]}"
-    SETUP_SCRIPT_BRANCH="$GIT_BRANCH"
+# Git 저장소 정보 파싱
+if [[ "$GIT_REPOSITORY" =~ git@([^:]+):([^/]+)/([^.]+)\.git ]]; then
+    GIT_HOST="${BASH_REMATCH[1]}"
+    SETUP_SCRIPT_ORG="${BASH_REMATCH[2]}"
+    SETUP_SCRIPT_REPO="${BASH_REMATCH[3]}"
+    
     echo "📦 Parsed Git info:"
     echo "   - Organization: $SETUP_SCRIPT_ORG"
     echo "   - Repository: $SETUP_SCRIPT_REPO"
-    echo "   - Branch: $SETUP_SCRIPT_BRANCH"
+    echo "   - Branch: $GIT_BRANCH"
 else
-    echo "❌ Error: Could not parse GitHub organization and repository from URL: $GIT_REPOSITORY"
-    exit 1
+    echo "⚠️  Could not parse Git repository URL, using defaults"
+    SETUP_SCRIPT_ORG="Q-BFD"
+    SETUP_SCRIPT_REPO="QCBM-LSTM"
 fi
 
+SETUP_SCRIPT_BRANCH="$GIT_BRANCH"
+SETUP_SCRIPT_PATH=".infra/setup_full.sh"
+
+# =====================================
+# 배포 설정
+# =====================================
 echo "🎯 Project Name: $PROJECT_NAME"
-echo "📚 Stack Name: $STACK_NAME"
+echo "📚 Stack Name: ${PROJECT_NAME}-dev-cpu"
+echo "🔐 AWS Key Name: $AWS_KEY_NAME"
 
-# =============================
-# Validation
-# =============================
-SSH_PUBLIC_KEY_FILE_EXPANDED="${SSH_PUBLIC_KEY_FILE/#\~/$HOME}"
-if [ ! -f "$SSH_PUBLIC_KEY_FILE_EXPANDED" ]; then
-    echo "❌ Error: SSH public key file not found at: $SSH_PUBLIC_KEY_FILE_EXPANDED"
-    exit 1
-fi
-
-# =============================
-# Read SSH Public and Private Keys
-# =============================
-# 공개 키에서 주석을 제거하여 전달합니다.
-SSH_PUBLIC_KEY=$(awk '{print $1" "$2}' "$SSH_PUBLIC_KEY_FILE_EXPANDED")
-SSH_PRIVATE_KEY_FILE="${SSH_PUBLIC_KEY_FILE_EXPANDED%.pub}"
-
-if [ ! -f "$SSH_PRIVATE_KEY_FILE" ]; then
-    echo "❌ Error: Corresponding private key not found at: $SSH_PRIVATE_KEY_FILE"
-    exit 1
-fi
-SSH_PRIVATE_KEY=$(cat "$SSH_PRIVATE_KEY_FILE")
+# SSH 키 로드
+SSH_PUBLIC_KEY=$(cat "$EXPANDED_PUBLIC_KEY")
+SSH_PRIVATE_KEY=$(cat "$EXPANDED_PRIVATE_KEY")
 
 if [ -z "$SSH_PUBLIC_KEY" ] || [ -z "$SSH_PRIVATE_KEY" ]; then
-    echo "❌ Error: SSH public or private key file is empty"
+    echo "❌ ERROR: SSH 키를 읽을 수 없습니다."
     exit 1
 fi
 
-echo "🔑 Using SSH public key from: $SSH_PUBLIC_KEY_FILE_EXPANDED"
 echo "🔐 Using corresponding private key for Git operations in container"
+
+# =====================================
+# CloudFormation 배포
+# =====================================
+STACK_NAME="${PROJECT_NAME}-dev-cpu"
+KEY_NAME="$AWS_KEY_NAME"
+VOLUME_SIZE="50"  # Smaller storage for testing
+INSTANCE_TYPE_PARAM="t3.large"  # Fixed CPU instance type
+
 echo "🚀 Deploying $PROJECT_NAME CPU Test Instance CloudFormation stack: $STACK_NAME"
 echo "🧪 Instance Type: $INSTANCE_TYPE_PARAM (CPU Testing - No GPU quota needed)"
 echo "💾 Storage: ${VOLUME_SIZE}GB EBS"
@@ -162,11 +250,9 @@ echo "📂 Git Repository: $GIT_REPOSITORY"
 echo "🌿 Git Branch: $GIT_BRANCH"
 echo ""
 echo "🎯 Purpose: Test Docker environment and SSH setup before GPU upgrade"
-echo "💰 Cost: ~\$0.09/hour (very affordable for testing)"
+echo "💰 Cost: ~$0.09/hour (very affordable for testing)"
+echo ""
 
-# =============================
-# Deploy CloudFormation Stack
-# =============================
 aws cloudformation deploy \
   --template-file cloudformation-cpu.yml \
   --stack-name "$STACK_NAME" \
@@ -178,62 +264,54 @@ aws cloudformation deploy \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
     GitBranch="$GIT_BRANCH" \
-    GitUserName="$DEV_USERNAME" \
-    GitUserEmail="${DEV_USERNAME}@users.noreply.github.com" \
-    SSHKeyName="$SSH_KEY_NAME" \
     SetupScriptOrg="$SETUP_SCRIPT_ORG" \
     SetupScriptRepo="$SETUP_SCRIPT_REPO" \
     SetupScriptBranch="$SETUP_SCRIPT_BRANCH" \
     SetupScriptPath="$SETUP_SCRIPT_PATH" \
+    SSHKeyName="$SSH_KEY_NAME" \
+    GitUserName="$GIT_USER_NAME" \
+    GitUserEmail="$GIT_USER_EMAIL" \
   --capabilities CAPABILITY_NAMED_IAM
 
-# =============================
-# Get Outputs
-# =============================
 if [ $? -eq 0 ]; then
     echo ""
     echo "🎉 $PROJECT_NAME CPU Test Instance deployed successfully!"
     echo "🧪 This validates your Docker and SSH setup"
     echo ""
     echo "📋 Stack Outputs:"
-    aws cloudformation describe-stacks \
-      --stack-name "$STACK_NAME" \
-      --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
-      --output table
+    aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs" --output table 2>/dev/null | head -20 | cat
     echo ""
     echo "🔧 Next Steps:"
     echo "   1. Wait 3-5 minutes for environment setup to complete"
-    echo "   2. Setup SSH: ./setup_ssh_config.sh $PROJECT_NAME"
-    echo "   3. Test with Jupyter: http://YOUR_ELASTIC_IP:8888 (token: ${PROJECT_NAME}token)"
+    echo "   2. Setup SSH: ./setup_ssh_config.sh $PROJECT_NAME --ssh-key $SSH_KEY_NAME"
+    echo "   3. Test with Jupyter: http://YOUR_ELASTIC_IP:8888 (token: qcbmtoken)"
     echo "   4. Connect: VSCode Remote-SSH → ${PROJECT_NAME}-container"
     echo "   5. Request GPU quota increase (see below)"
     echo ""
     echo "🔑 SSH Keys Info:"
     echo "   📁 EC2 Key Pair: ~/.ssh/${KEY_NAME}.pem (for EC2 direct access)"
-    echo "   📁 Dev SSH Key: $SSH_PUBLIC_KEY_FILE_EXPANDED (for container access)"
-    echo ""
-    echo "🧪 Testing Environment:"
-    echo "   💻 Instance: $INSTANCE_TYPE_PARAM (2 vCPU, 8GB RAM)"
-    echo "   💾 Storage: ${VOLUME_SIZE}GB EBS"
-    echo "   🐍 Python: CPU-only PyTorch, Qiskit, Jupyter"
-    echo "   📂 Repository: $GIT_REPOSITORY (branch: $GIT_BRANCH)"
-    echo ""
-    echo "🚀 GPU Upgrade Path:"
-    echo "   1. Test current environment thoroughly"
-    echo "   2. AWS Console → Service Quotas → EC2"
-    echo "   3. Request 'Running On-Demand G instances' → 8 vCPU"
-    echo "   4. Wait for approval (usually 1-24 hours)"
-    echo "   5. Deploy GPU instance: ./deploy-ondemand.sh or ./deploy-spot.sh"
-    echo ""
-    echo "📊 Environment Status:"
-    echo "   ⏳ Setting up... (check logs: ssh ubuntu@YOUR_IP 'tail -f /var/log/${PROJECT_NAME}-setup.log')"
+    echo "   📁 Dev SSH Key: $SSH_PUBLIC_KEY_FILE (for container access)"
 else
     echo "❌ Deployment failed!"
-    echo ""
-    echo "🔧 Troubleshooting:"
-    echo "   1. Check AWS CLI configuration: aws sts get-caller-identity"
-    echo "   2. Verify SSH key file exists: ls -la $SSH_PUBLIC_KEY_FILE_EXPANDED"
-    echo "   3. Check CloudFormation events:"
-    echo "      aws cloudformation describe-stack-events --stack-name $STACK_NAME"
     exit 1
-fi 
+fi
+
+# =====================================
+# 추가 정보 표시
+# =====================================
+echo ""
+echo "🧪 Testing Environment:"
+echo "   💻 Instance: $INSTANCE_TYPE_PARAM (2 vCPU, 8GB RAM)"
+echo "   💾 Storage: ${VOLUME_SIZE}GB EBS"
+echo "   🐍 Python: CPU-only PyTorch, Qiskit, Jupyter"
+echo "   📂 Repository: $GIT_REPOSITORY (branch: $GIT_BRANCH)"
+echo ""
+echo "🚀 GPU Upgrade Path:"
+echo "   1. Test current environment thoroughly"
+echo "   2. AWS Console → Service Quotas → EC2"
+echo "   3. Request 'Running On-Demand G instances' → 8 vCPU"
+echo "   4. Wait for approval (usually 1-24 hours)"
+echo "   5. Deploy GPU instance: ./deploy-ondemand.sh or ./deploy-spot.sh"
+echo ""
+echo "📊 Environment Status:"
+echo "   ⏳ Setting up... (check logs: ssh ubuntu@YOUR_IP 'tail -f /var/log/${PROJECT_NAME}-setup.log')" 

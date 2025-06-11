@@ -4,15 +4,83 @@
 # Generic SSH Config Setup Script
 # =============================
 
-# Project name from argument or default
-PROJECT_NAME="${1:-qcbm}"  # First argument or default to 'qcbm'
+# =====================================
+# 사용법 표시 함수
+# =====================================
+show_usage() {
+    echo "📋 Usage: $0 PROJECT_NAME [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -k, --ssh-key KEY_NAME    SSH 키 이름 (필수)"
+    echo "  -h, --help               도움말 표시"
+    echo ""
+    echo "Examples:"
+    echo "  $0 qcbm --ssh-key id_ed25519_github_john-doe"
+    echo "  $0 myproject -k id_rsa_company_alice-kim"
+    echo "  $0 qcbm -k /custom/path/my_key_ed25519_github_alice-kim"
+    echo ""
+    echo "🔑 SSH 키 네이밍 규칙:"
+    echo "  패턴: id_[키타입]_[서비스]_[사용자이름]"
+    echo "  ⚠️  사용자 이름 부분에 underscore(_) 사용 금지!"
+    echo ""
+    echo "  ✅ 올바른 예시:"
+    echo "    - id_ed25519_github_john-doe"
+    echo "    - id_rsa_company_alice-kim"
+    echo ""
+    echo "  ❌ 잘못된 예시:"
+    echo "    - id_ed25519_github_john_doe  (underscore 사용)"
+    echo ""
+    echo "📦 이 스크립트는 다음을 설정합니다:"
+    echo "  - EC2 Instance: {PROJECT_NAME}"
+    echo "  - Docker Container: {PROJECT_NAME}-container"
+    exit 0
+}
 
 # =====================================
-# 🔑 SSH Key Configuration (deploy-cpu.sh와 동일한 설정)
+# 인자 파싱
 # =====================================
-# 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
-# 예: id_ed25519_github_yourname, id_rsa_company_yourname
-SSH_KEY_NAME="id_ed25519_github_qb_frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
+PROJECT_NAME=""
+SSH_KEY_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -k|--ssh-key)
+            SSH_KEY_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            ;;
+        -*)
+            echo "❌ 알 수 없는 옵션: $1"
+            echo "도움말: $0 --help"
+            exit 1
+            ;;
+        *)
+            if [ -z "$PROJECT_NAME" ]; then
+                PROJECT_NAME="$1"
+            else
+                echo "❌ 너무 많은 인자: $1"
+                echo "도움말: $0 --help"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# 필수 인자 검증
+if [ -z "$PROJECT_NAME" ]; then
+    echo "❌ ERROR: PROJECT_NAME이 필요합니다."
+    show_usage
+fi
+
+if [ -z "$SSH_KEY_NAME" ]; then
+    echo "❌ ERROR: SSH 키 이름이 필요합니다."
+    echo "   예: $0 $PROJECT_NAME --ssh-key id_ed25519_github_yourname"
+    echo "   💡 deploy-cpu.sh에서 사용한 것과 동일한 키 이름을 사용하세요!"
+    show_usage
+fi
 
 # =====================================
 # 자동 사용자 이름 추출 함수
@@ -33,36 +101,39 @@ extract_username_from_key() {
     echo "$username_part"
 }
 
-# 자동으로 사용자 이름과 키 경로 설정
-DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
-SSH_PRIVATE_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME"
-SSH_PUBLIC_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME.pub"
+# 사용자 이름 추출 (경로에서 키 이름만 추출)
+if [[ "$SSH_KEY_NAME" == *"/"* ]]; then
+    # Full path인 경우 파일명만 추출
+    KEY_BASENAME=$(basename "$SSH_KEY_NAME")
+else
+    # 키 이름만인 경우 그대로 사용
+    KEY_BASENAME="$SSH_KEY_NAME"
+fi
 
-# =============================
-# Usage Information
-# =============================
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 [PROJECT_NAME]"
-    echo ""
-    echo "Examples:"
-    echo "   $0 qcbm          # Setup SSH for project 'qcbm'"
-    echo "   $0 myproject     # Setup SSH for project 'myproject'"
-    echo "   $0               # Setup SSH for default 'qcbm'"
-    echo ""
-    echo "📦 This will configure SSH access to:"
-    echo "   - EC2 Instance: {PROJECT_NAME}"
-    echo "   - Docker Container: {PROJECT_NAME}-container"
-    echo ""
-    echo "🔑 SSH Key Configuration:"
-    echo "   - Key Name: $SSH_KEY_NAME"
-    echo "   - User Name: $DEV_USERNAME"
-    echo "   - Private Key: $SSH_PRIVATE_KEY_FILE"
-    exit 0
+DEV_USERNAME=$(extract_username_from_key "$KEY_BASENAME")
+
+# SSH 키 파일 경로 설정 (유연한 경로 지원)
+if [[ "$SSH_KEY_NAME" == *"/"* ]]; then
+    # Full path가 주어진 경우
+    if [[ "$SSH_KEY_NAME" == *".pub" ]]; then
+        # .pub 파일 경로가 주어진 경우
+        SSH_PUBLIC_KEY_FILE="$SSH_KEY_NAME"
+        SSH_PRIVATE_KEY_FILE="${SSH_KEY_NAME%.pub}"
+    else
+        # 개인 키 경로가 주어진 경우
+        SSH_PRIVATE_KEY_FILE="$SSH_KEY_NAME"
+        SSH_PUBLIC_KEY_FILE="${SSH_KEY_NAME}.pub"
+    fi
+else
+    # 키 이름만 주어진 경우 (기본 ~/.ssh/ 경로 사용)
+    SSH_PRIVATE_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME"
+    SSH_PUBLIC_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME.pub"
 fi
 
 echo "🎯 Project Name: $PROJECT_NAME"
 echo "🔑 SSH Key: $SSH_KEY_NAME"
 echo "👤 Dev User: $DEV_USERNAME"
+echo "📁 SSH Private Key: $SSH_PRIVATE_KEY_FILE"
 
 # =============================
 # Configuration Variables
@@ -133,8 +204,8 @@ if [ -z "$PRIMARY_SSH_KEY" ]; then
         echo "   - $key_file"
     done
     echo ""
-    echo "💡 If you need to update the SSH key name, edit this file:"
-    echo "   SSH_KEY_NAME=\"$SSH_KEY_NAME\""
+    echo "💡 If you need to update the SSH key name, use:"
+    echo "   $0 $PROJECT_NAME --ssh-key YOUR_KEY_NAME"
     echo "   This should match the key name used in deploy-cpu.sh"
     exit 1
 fi
@@ -153,6 +224,9 @@ if [ -z "$EIP" ] || [ "$EIP" = "None" ]; then
     echo "   - CloudFormation 스택 이름: $STACK_NAME"
     echo "   - 스택이 정상 배포되었는지 확인하세요."
     echo "   - AWS CLI 권한을 확인하세요."
+    echo ""
+    echo "💡 스택을 먼저 배포해야 합니다:"
+    echo "   ./deploy-cpu.sh $PROJECT_NAME --ssh-key $SSH_KEY_NAME"
     exit 1
 fi
 
@@ -214,6 +288,7 @@ echo "   🐳 Docker 컨테이너:   ssh ${ALIAS_NAME}-container (User: ${DEV_US
 echo ""
 echo "🔗 추가 정보:"
 echo "   📱 VSCode Web:        http://${EIP}:8080"
+echo "   📱 JupyterLab:        http://${EIP}:8888 (token: qcbmtoken)"
 echo "   🔧 SSH Config:        ${CONFIG_FILE}"
 echo "   🔑 Primary SSH Key:   ${PRIMARY_SSH_KEY}"
 
@@ -236,5 +311,16 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "✅ Container SSH 연결 성공!"
     else
         echo "⚠️  Container SSH 연결 실패 (컨테이너 준비 중일 수 있음)"
+        echo "💡 몇 분 후에 다시 시도해보세요: ssh ${ALIAS_NAME}-container"
     fi
 fi
+
+echo ""
+echo "🎯 요약:"
+echo "   📦 프로젝트: $PROJECT_NAME"
+echo "   🔑 SSH 키: $SSH_KEY_NAME"
+echo "   👤 사용자: $DEV_USERNAME"
+echo "   🌐 IP: $EIP"
+echo ""
+echo "🚀 이제 다음 명령으로 접속할 수 있습니다:"
+echo "   ssh ${ALIAS_NAME}-container"
