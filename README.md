@@ -87,14 +87,25 @@ id_[키타입]_[서비스]_[사용자이름]
 1️⃣ **EC2 개발 환경 자동 배포**
 
 ```bash
-cd .infra
-./deploy-cpu.sh projectname   # 프로젝트 이름은 자유롭게 지정 가능
+# 기본 설정 (t3.large, 50GB)
+./deploy-cpu.sh projectname --ssh-key id_ed25519_github_yourname
+
+# 커스텀 설정 예시
+./deploy-cpu.sh projectname --ssh-key id_ed25519_github_yourname \
+  --instance-type t3.xlarge --volume-size 100
 ```
+
+**지원되는 CPU 인스턴스 타입:**
+
+- `t3.medium`, `t3.large`, `t3.xlarge`, `t3.2xlarge` (일반 목적)
+- `c5.large`, `c5.xlarge`, `c5.2xlarge` (컴퓨팅 최적화)
+- `m5.large`, `m5.xlarge`, `m5.2xlarge` (균형잡힌 성능)
+- `m7i.2xlarge`, `m7i.4xlarge` (최신 세대)
 
 2️⃣ **SSH 설정** (선택사항)
 
 ```bash
-./setup_ssh_config.sh projectname  # SSH 접속 간편화
+./setup-ssh.sh projectname --ssh-key id_ed25519_github_yourname
 ```
 
 3️⃣ **접속 & 개발**
@@ -110,8 +121,36 @@ ssh projectname-container     # Docker 컨테이너 내부 셸
 | EC2 SSH      | `ssh ubuntu@<EIP>`                   | 서버 관리      |
 | 컨테이너 SSH | `ssh -p 2222 yourname@<EIP>`         | 코드 작성·실험 |
 
-> ⏱ 설치 5-8분 소요, 비용 ≈ $0.09/시간 (t3.large + 50 GB EBS)  
+> ⏱ 설치 5-8분 소요  
 > 🔑 `yourname`은 SSH 키에서 자동 추출된 사용자 이름입니다
+
+**💰 비용 예시** (US East 기준):
+
+- `t3.large`: ~$0.09/시간 (2 vCPU, 8GB RAM)
+- `t3.xlarge`: ~$0.18/시간 (4 vCPU, 16GB RAM)
+- `c5.2xlarge`: ~$0.34/시간 (8 vCPU, 16GB RAM, 컴퓨팅 최적화)
+- `m7i.2xlarge`: ~$0.40/시간 (8 vCPU, 32GB RAM, 최신 세대)
+- EBS 스토리지: ~$0.10/월 per GB
+
+### 🚀 GPU 개발 환경 (고급 사용자)
+
+양자 머신 러닝 모델 학습을 위한 GPU 인스턴스가 필요한 경우:
+
+```bash
+# SPOT 인스턴스 (60-90% 할인, 권장)
+./deploy-gpu.sh projectname --ssh-key id_ed25519_github_yourname --pricing spot
+
+# ON-DEMAND 인스턴스 (안정성 우선)
+./deploy-gpu.sh projectname --ssh-key id_ed25519_github_yourname --pricing ondemand
+```
+
+**지원되는 GPU 인스턴스:**
+
+- `g4dn.xlarge`, `g4dn.2xlarge` (NVIDIA T4, 비용 효율적)
+- `g5.xlarge`, `g5.2xlarge` (NVIDIA A10G, 최신 세대)
+- `p3.2xlarge` (NVIDIA V100, 고성능 ML)
+
+> ⚠️ **주의**: GPU 인스턴스는 AWS 할당량 요청이 필요할 수 있습니다.
 
 ### 💻 로컬 실행 (선택 사항)
 

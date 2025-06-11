@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # =============================
-# 🚀 Quick Deploy - CPU Development Environment
+# 🚀 Quick Deploy - CPU Development Environment (Wrapper)
 # =============================
 
 # Display banner
-echo "🎯 Quick Deploy for Development Environment"
+echo "🎯 Quick Deploy for CPU Development Environment"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Check if .infra directory exists
@@ -15,16 +15,39 @@ if [ ! -d ".infra" ]; then
     exit 1
 fi
 
-# Show usage if help requested
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "📋 Usage: $0 [PROJECT_NAME] [INSTANCE_TYPE]"
+# Show usage if help requested or if run without arguments
+if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
+    echo "📋 Usage: $0 PROJECT_NAME [OPTIONS]"
+    echo ""
+    echo "Required Options:"
+    echo "  -k, --ssh-key KEY_NAME    SSH 키 이름 (필수)"
+    echo ""
+    echo "Optional:"
+    echo "  -i, --instance-type TYPE  CPU 인스턴스 타입 (기본값: t3.large)"
+    echo "  -v, --volume-size SIZE    EBS 볼륨 크기 GB (기본값: 50)"
+    echo "  -h, --help               도움말 표시"
     echo ""
     echo "Examples:"
-    echo "   $0 qcbm                 # 기본 t3.large"
-    echo "   $0 qcbm t3.xlarge       # 4 vCPU 16GB"
-    echo "   $0 myproj c5.xlarge     # CPU 최적화"
-    echo "   $0 myproject     # Deploy custom project"
-    echo "   $0               # Deploy with default name 'qcbm'"
+    echo "  $0 qcbm --ssh-key id_ed25519_github_john-doe"
+    echo "  $0 myproject -k id_rsa_company_alice-kim --instance-type t3.xlarge"
+    echo "  $0 qcbm -k /custom/path/my_key -i c5.2xlarge -v 100"
+    echo ""
+    echo "🔑 SSH 키 네이밍 규칙:"
+    echo "  패턴: id_[키타입]_[서비스]_[사용자이름]"
+    echo "  ⚠️  사용자 이름 부분에 underscore(_) 사용 금지!"
+    echo ""
+    echo "  ✅ 올바른 예시:"
+    echo "    - id_ed25519_github_john-doe"
+    echo "    - id_rsa_company_alice-kim"
+    echo ""
+    echo "  ❌ 잘못된 예시:"
+    echo "    - id_ed25519_github_john_doe  (underscore 사용)"
+    echo ""
+    echo "🖥️  지원되는 CPU 인스턴스:"
+    echo "  - t3.medium, t3.large, t3.xlarge, t3.2xlarge (일반 목적)"
+    echo "  - c5.large, c5.xlarge, c5.2xlarge (컴퓨팅 최적화)"
+    echo "  - m5.large, m5.xlarge, m5.2xlarge (균형잡힌 성능)"
+    echo "  - m7i.2xlarge, m7i.4xlarge (최신 세대)"
     echo ""
     echo "🎁 What this does:"
     echo "   ✅ Creates AWS infrastructure (EC2, EBS, Security Groups)"
@@ -33,43 +56,67 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "   ✅ Configures SSH access"
     echo "   ✅ Provides VSCode Web interface"
     echo ""
-    echo "💰 Cost: ~$0.09/hour (t3.large + 50GB EBS)"
+    echo "💰 Cost Examples:"
+    echo "   💸 t3.large: ~\$0.09/hour (2 vCPU, 8GB RAM)"
+    echo "   💸 t3.xlarge: ~\$0.18/hour (4 vCPU, 16GB RAM)"
+    echo "   💸 c5.2xlarge: ~\$0.34/hour (8 vCPU, 16GB RAM, 컴퓨팅 최적화)"
+    echo "   💸 m7i.2xlarge: ~\$0.40/hour (8 vCPU, 32GB RAM, 최신 세대)"
+    echo ""
     echo "⏱️  Setup time: ~5 minutes"
+    echo ""
+    echo "📁 Infrastructure files: ./.infra/"
     exit 0
 fi
 
-# Parse arguments
-PROJECT_NAME="$1"
-INSTANCE_TYPE="${2:-t3.large}"
-if [ -z "$PROJECT_NAME" ]; then
-  echo "❌ Project name required. Usage: $0 <PROJECT_NAME> [INSTANCE_TYPE]"; exit 1; fi
+# Validate that SSH key argument is provided
+SSH_KEY_PROVIDED=false
+for arg in "$@"; do
+    if [[ "$arg" == "--ssh-key" ]] || [[ "$arg" == "-k" ]]; then
+        SSH_KEY_PROVIDED=true
+        break
+    fi
+done
 
-echo "🎯 Project: $PROJECT_NAME"
-echo "📁 Infrastructure files: ./.infra/"
+if [ "$SSH_KEY_PROVIDED" = false ]; then
+    echo "❌ ERROR: SSH 키 이름이 필요합니다."
+    echo ""
+    echo "사용법:"
+    echo "  $0 PROJECT_NAME --ssh-key KEY_NAME"
+    echo ""
+    echo "예시:"
+    echo "  $0 qcbm --ssh-key id_ed25519_github_yourname"
+    echo ""
+    echo "도움말: $0 --help"
+    exit 1
+fi
+
+echo "🚀 Starting CPU deployment..."
+echo "📁 Using infrastructure scripts from: ./.infra/"
 echo ""
 
-# Call the actual deployment script
-echo "🚀 Starting deployment..."
-cd .infra && ./deploy-cpu.sh "$PROJECT_NAME" "$INSTANCE_TYPE"
+# Call the actual deployment script with all arguments
+cd .infra && ./deploy-cpu.sh "$@"
 
 # Check deployment result
-if [ $? -eq 0 ]; then
+DEPLOY_EXIT_CODE=$?
+cd ..
+
+if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🎉 Deployment completed successfully!"
     echo ""
     echo "📋 Next Steps:"
     echo "   1. Wait 3-5 minutes for environment setup"
-    echo "   2. Setup SSH: ./setup-ssh.sh $PROJECT_NAME"
-    echo "   3. Connect: ssh $PROJECT_NAME"
-    echo "   4. Or use: ssh ${PROJECT_NAME}-container"
+    echo "   2. Setup SSH: ./setup-ssh.sh PROJECT_NAME --ssh-key KEY_NAME"
+    echo "   3. Connect: ssh PROJECT_NAME-container"
     echo ""
     echo "🌐 Access your environment:"
-    echo "   📊 Get your IP: cd .infra && aws cloudformation describe-stacks --stack-name ${PROJECT_NAME}-dev-cpu --query 'Stacks[0].Outputs[?OutputKey==\"StaticIP\"].OutputValue' --output text"
-    echo "   🪐 Jupyter: http://YOUR_IP:8888 (token: ${PROJECT_NAME}token)"
+    echo "   📊 Get your IP: cd .infra && aws cloudformation describe-stacks --stack-name PROJECT_NAME-dev-cpu --query 'Stacks[0].Outputs[?OutputKey==\"StaticIP\"].OutputValue' --output text"
+    echo "   🪐 Jupyter: http://YOUR_IP:8888 (token: qcbmtoken)"
     echo "   💻 VSCode Web: http://YOUR_IP:8080"
     echo ""
-    echo "🔍 Monitor setup: ssh $PROJECT_NAME 'tail -f /var/log/${PROJECT_NAME}-setup.log'"
+    echo "🔍 Monitor setup: ssh ubuntu@YOUR_IP 'tail -f /var/log/PROJECT_NAME-setup.log'"
 else
     echo ""
     echo "❌ Deployment failed! Check the error messages above."

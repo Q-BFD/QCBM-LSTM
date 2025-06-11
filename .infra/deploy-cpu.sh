@@ -12,12 +12,14 @@ show_usage() {
     echo ""
     echo "Options:"
     echo "  -k, --ssh-key KEY_NAME    SSH 키 이름 (필수)"
+    echo "  -i, --instance-type TYPE  CPU 인스턴스 타입 (기본값: t3.large)"
+    echo "  -v, --volume-size SIZE    EBS 볼륨 크기 GB (기본값: 50)"
     echo "  -h, --help               도움말 표시"
     echo ""
     echo "Examples:"
     echo "  $0 qcbm --ssh-key id_ed25519_github_john-doe"
-    echo "  $0 myproject -k id_rsa_company_alice-kim"
-    echo "  $0 qcbm -k /custom/path/my_key_ed25519_github_alice-kim"
+    echo "  $0 myproject -k id_rsa_company_alice-kim --instance-type t3.xlarge"
+    echo "  $0 qcbm -k /custom/path/my_key -i c5.2xlarge -v 100"
     echo ""
     echo "🔑 SSH 키 네이밍 규칙:"
     echo "  패턴: id_[키타입]_[서비스]_[사용자이름]"
@@ -37,11 +39,21 @@ show_usage() {
 # =====================================
 PROJECT_NAME=""
 SSH_KEY_NAME=""
+INSTANCE_TYPE="t3.large"
+VOLUME_SIZE="50"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -k|--ssh-key)
             SSH_KEY_NAME="$2"
+            shift 2
+            ;;
+        -i|--instance-type)
+            INSTANCE_TYPE="$2"
+            shift 2
+            ;;
+        -v|--volume-size)
+            VOLUME_SIZE="$2"
             shift 2
             ;;
         -h|--help)
@@ -163,7 +175,9 @@ echo "🎯 배포 정보 확인:"
 echo "   📦 프로젝트 이름: $PROJECT_NAME"
 echo "   🔑 SSH 키: $SSH_KEY_NAME"
 echo "   👤 컨테이너 사용자: $DEV_USERNAME"
-echo "   🖥️  스택 이름: ${PROJECT_NAME}-dev-cpu"
+echo "   🖥️  인스턴스 타입: $INSTANCE_TYPE"
+echo "   💾 볼륨 크기: ${VOLUME_SIZE}GB"
+echo "   🏷️  스택 이름: ${PROJECT_NAME}-dev-cpu"
 echo ""
 read -p "🚀 위 설정으로 배포를 진행하시겠습니까? (y/N): " -r
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -240,11 +254,10 @@ echo "🔐 Using corresponding private key for Git operations in container"
 # =====================================
 STACK_NAME="${PROJECT_NAME}-dev-cpu"
 KEY_NAME="$AWS_KEY_NAME"
-VOLUME_SIZE="50"  # Smaller storage for testing
-INSTANCE_TYPE_PARAM="t3.large"  # Fixed CPU instance type
+# Volume size and instance type are now from command line arguments
 
 echo "🚀 Deploying $PROJECT_NAME CPU Test Instance CloudFormation stack: $STACK_NAME"
-echo "🧪 Instance Type: $INSTANCE_TYPE_PARAM (CPU Testing - No GPU quota needed)"
+echo "🧪 Instance Type: $INSTANCE_TYPE (CPU Testing - No GPU quota needed)"
 echo "💾 Storage: ${VOLUME_SIZE}GB EBS"
 echo "📂 Git Repository: $GIT_REPOSITORY"
 echo "🌿 Git Branch: $GIT_BRANCH"
@@ -260,7 +273,7 @@ aws cloudformation deploy \
     ProjectName="$PROJECT_NAME" \
     SSHPublicKey="$SSH_PUBLIC_KEY" \
     SSHPrivateKey="$SSH_PRIVATE_KEY" \
-    InstanceType="$INSTANCE_TYPE_PARAM" \
+    InstanceType="$INSTANCE_TYPE" \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
     GitBranch="$GIT_BRANCH" \
@@ -301,7 +314,7 @@ fi
 # =====================================
 echo ""
 echo "🧪 Testing Environment:"
-echo "   💻 Instance: $INSTANCE_TYPE_PARAM (2 vCPU, 8GB RAM)"
+echo "   💻 Instance: $INSTANCE_TYPE"
 echo "   💾 Storage: ${VOLUME_SIZE}GB EBS"
 echo "   🐍 Python: CPU-only PyTorch, Qiskit, Jupyter"
 echo "   📂 Repository: $GIT_REPOSITORY (branch: $GIT_BRANCH)"

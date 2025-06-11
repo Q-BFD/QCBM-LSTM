@@ -8,15 +8,66 @@
 
 ```
 .infra/
-├── cloudformation-cpu.yml   # CPU 스택 + UserData
-├── cloudformation-ondemand.yml / spot.yml
-├── deploy-cpu.sh            # 로우레벨 배포 스크립트
-├── setup_ssh_config.sh      # SSH 설정 스크립트
-├── Dockerfile               # 개발 컨테이너 이미지
-└── README.md                # (현재 문서)
+├── cloudformation-cpu.yml      # CPU 스택 + UserData
+├── cloudformation-gpu.yml      # GPU 스택 (spot/ondemand 조건부)
+├── deploy-cpu.sh              # CPU 배포 구현 스크립트
+├── deploy-gpu.sh              # GPU 배포 구현 스크립트
+├── setup_ssh_config.sh        # SSH 설정 스크립트
+├── Dockerfile                 # 개발 컨테이너 이미지
+└── README.md                  # (현재 문서)
+
+# 프로젝트 루트의 Wrapper Scripts:
+../deploy-cpu.sh               # CPU 배포 사용자 인터페이스
+../deploy-gpu.sh               # GPU 배포 사용자 인터페이스
+../setup-ssh.sh                # SSH 설정 사용자 인터페이스
 ```
 
 ## ⚡ 빠른 명령어 모음
+
+### 🎯 권장 사용법 (Wrapper Scripts)
+
+| 작업              | 명령                                                                                 | 설명                            |
+| ----------------- | ------------------------------------------------------------------------------------ | ------------------------------- |
+| CPU 배포 (기본)   | `../deploy-cpu.sh myproject --ssh-key id_ed25519_github_yourname`                    | t3.large, 50GB로 기본 배포      |
+| CPU 배포 (커스텀) | `../deploy-cpu.sh myproject -k id_ed25519_github_yourname -i t3.xlarge -v 100`       | 인스턴스/볼륨 크기 커스터마이징 |
+| GPU 배포 (SPOT)   | `../deploy-gpu.sh myproject --ssh-key id_ed25519_github_yourname --pricing spot`     | 60-90% 할인된 SPOT 인스턴스     |
+| GPU 배포 (고정)   | `../deploy-gpu.sh myproject --ssh-key id_ed25519_github_yourname --pricing ondemand` | 안정적인 ON-DEMAND 인스턴스     |
+| SSH 설정          | `../setup-ssh.sh myproject --ssh-key id_ed25519_github_yourname`                     | SSH 접속 간편화                 |
+
+> 💡 **Wrapper 장점**:
+>
+> - 🔑 SSH 키 기반 자동 사용자 설정
+> - ✅ 인자 검증과 사용자 확인 프롬프트
+> - 📋 일관된 사용자 인터페이스
+> - 💰 비용과 설정 정보 미리 확인
+> - 📁 프로젝트 루트에서 바로 실행 가능
+
+### 🔑 SSH 키 네이밍 시스템 (개발자 참고)
+
+Wrapper 스크립트는 SSH 키 이름에서 사용자 이름을 자동 추출합니다:
+
+```bash
+# 패턴: id_[keytype]_[service]_[username]
+KEY_NAME="id_ed25519_github_alice-kim"
+
+# 추출 로직 (bash):
+USERNAME=$(echo "$KEY_NAME" | sed 's/.*_\([^_]*\)$/\1/')
+# → "alice-kim"
+
+# 자동 설정:
+DEV_USERNAME="alice-kim"                              # Docker 컨테이너 사용자
+GIT_USER_NAME="alice-kim"                             # Git 설정
+GIT_USER_EMAIL="alice-kim@users.noreply.github.com"  # Git 이메일
+AWS_KEY_NAME="alice-kim-global-key"                   # EC2 KeyPair 이름
+```
+
+**검증 규칙:**
+
+- 사용자 이름 부분에 underscore(`_`) 사용 금지 (hyphen `-` 권장)
+- 키 파일 존재 여부 확인 (`.pub` 및 private key)
+- 경로 지원: 키 이름 또는 full path 모두 가능
+
+### 🔧 개발자용 직접 명령
 
 | 작업               | 명령                                                                                 | 설명               |
 | ------------------ | ------------------------------------------------------------------------------------ | ------------------ |
@@ -26,8 +77,9 @@
 aws cloudformation deploy \
  --template-file cloudformation-cpu.yml \
  --stack-name test-dev-cpu \
- --parameter-overrides ProjectName=test KeyName=test-dev-key VolumeSize=50 \
- GitRepository=https://github.com/Q-BFD/QCBM-LSTM.git GitBranch=automation \
+ --parameter-overrides ProjectName=test SSHPublicKey="$(cat ~/.ssh/id_ed25519.pub)" \
+ SSHPrivateKey="$(cat ~/.ssh/id_ed25519)" InstanceType=t3.large VolumeSize=50 \
+ GitRepository=git@github.com:Q-BFD/QCBM-LSTM.git GitBranch=automation \
  --capabilities CAPABILITY_NAMED_IAM
 
 ````| 래퍼 스크립트 없이 직접 배포 |
