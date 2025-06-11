@@ -1,0 +1,377 @@
+# =============================
+# Generic Dev Environment - GPU Instance Template (Spot & OnDemand)
+# =============================
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Generic Dev Environment - GPU Instance with Docker + EBS (Spot & OnDemand Support)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name for resource naming (e.g., qcbm, myproject)
+    AllowedPattern: ^[a-z][a-z0-9-]*[a-z0-9]$
+    ConstraintDescription: Must start with lowercase letter, contain only lowercase letters, numbers, and hyphens
+  InstanceType:
+    Type: String
+    Default: g4dn.2xlarge
+    AllowedValues:
+      - g4dn.xlarge # 4 vCPU, 16 GB RAM, 1x NVIDIA T4
+      - g4dn.2xlarge # 8 vCPU, 32 GB RAM, 1x NVIDIA T4
+      - g4dn.4xlarge # 16 vCPU, 64 GB RAM, 1x NVIDIA T4
+      - g5.xlarge # 4 vCPU, 16 GB RAM, 1x NVIDIA A10G
+      - g5.2xlarge # 8 vCPU, 32 GB RAM, 1x NVIDIA A10G
+      - g5.4xlarge # 16 vCPU, 64 GB RAM, 1x NVIDIA A10G
+      - p3.2xlarge # 8 vCPU, 61 GB RAM, 1x NVIDIA V100
+    Description: GPU-enabled instance type for ML/quantum computing workloads
+  PricingModel:
+    Type: String
+    Default: spot
+    AllowedValues:
+      - spot
+      - ondemand
+    Description: Instance pricing model (spot = 60-90% savings, ondemand = reliable)
+  SpotMaxPrice:
+    Type: String
+    Default: '0.50'
+    Description: Maximum price per hour for Spot instances (only used if PricingModel is spot)
+  VolumeSize:
+    Type: Number
+    Default: 100
+    Description: Size of the EBS volume in GiB (larger for GPU workloads)
+  SSHPublicKey:
+    Type: String
+    Description: SSH public key to be added to authorized_keys for EC2 access
+    AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
+    ConstraintDescription: Must be a valid SSH public key
+  SSHPrivateKey:
+    Type: String
+    Description: SSH private key to be injected into the container for Git operations
+    NoEcho: true
+    MinLength: 1
+    ConstraintDescription: SSH private key is required
+  GitRepository:
+    Type: String
+    Description: Git repository URL to clone
+  GitBranch:
+    Type: String
+    Description: Git branch to checkout
+  SetupScriptOrg:
+    Type: String
+    Description: GitHub organization containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script organization name is required
+  SetupScriptRepo:
+    Type: String
+    Description: GitHub repository containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script repository name is required
+  SetupScriptBranch:
+    Type: String
+    Description: Branch containing the setup script
+    MinLength: 1
+    ConstraintDescription: Setup script branch name is required
+  SetupScriptPath:
+    Type: String
+    Description: Path to the setup script in the repository
+    MinLength: 1
+    AllowedPattern: ^[a-zA-Z0-9/_.-]+$
+    ConstraintDescription: Setup script path must be a valid file path and is required
+  SSHKeyName:
+    Type: String
+    Description: SSH key name (e.g., id_ed25519_github_username) for dynamic user extraction
+    AllowedPattern: ^id_(rsa|ed25519|ecdsa)_.*_[a-zA-Z0-9_-]+$
+    ConstraintDescription: Must follow pattern id_type_provider_username (e.g., id_ed25519_github_username)
+  GitUserName:
+    Type: String
+    Description: Git user name for commits
+    MinLength: 1
+    ConstraintDescription: Git user name is required
+  GitUserEmail:
+    Type: String
+    Description: Git user email for commits
+    AllowedPattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+    ConstraintDescription: Must be a valid email address
+
+Conditions:
+  IsSpotInstance: !Equals [!Ref PricingModel, spot]
+  IsOnDemandInstance: !Equals [!Ref PricingModel, ondemand]
+
+Resources:
+  ProjectSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Allow SSH, VSCode, Docker SSH, and Jupyter for ${ProjectName} GPU'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8888
+          ToPort: 8888
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-GPU-SecurityGroup'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: PricingModel
+          Value: !Ref PricingModel
+
+  # Spot Instance
+  ProjectSpotInstance:
+    Type: AWS::EC2::Instance
+    Condition: IsSpotInstance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0c9c942bd7bf113a2
+      SecurityGroupIds:
+        - !Ref ProjectSecurityGroup
+      InstanceMarketOptions:
+        MarketType: spot
+        SpotOptions:
+          MaxPrice: !Ref SpotMaxPrice
+          SpotInstanceType: one-time
+          InstanceInterruptionBehavior: stop
+      BlockDeviceMappings:
+        - DeviceName: /dev/sdf
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSize
+            DeleteOnTermination: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-GPU-Instance-Spot'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: PricingModel
+          Value: spot
+        - Key: InstanceType
+          Value: !Ref InstanceType
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          # Manually inject the public and private keys for initial SSH access and Git
+          mkdir -p "/home/ubuntu/.ssh"
+
+          # Inject public key for SSH access to EC2
+          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/authorized_keys"
+
+          # Inject the public key and private key with dynamic key name
+          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/${SSHKeyName}"
+
+          # Set correct permissions
+          chown -R ubuntu:ubuntu "/home/ubuntu/.ssh"
+          chmod 700 "/home/ubuntu/.ssh"
+          chmod 600 "/home/ubuntu/.ssh/authorized_keys"
+          chmod 644 "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          chmod 600 "/home/ubuntu/.ssh/${SSHKeyName}"
+          echo "Public and private keys for EC2 access and Git have been injected."
+
+          # Export variables for the setup script to use.
+          export SSHPublicKey='${SSHPublicKey}'
+          export SSHPrivateKey='${SSHPrivateKey}'
+
+          # Construct and run the main setup script
+          SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
+          echo "Downloading setup script from: $SETUP_SCRIPT_URL"
+
+          # Download and verify setup script
+          if ! curl -fsSL "$SETUP_SCRIPT_URL" -o /tmp/setup.sh; then
+            echo "ERROR: Failed to download setup script from $SETUP_SCRIPT_URL"
+            exit 1
+          fi
+
+          if [ ! -s /tmp/setup.sh ]; then
+            echo "ERROR: Downloaded setup script is empty"
+            exit 1
+          fi
+
+          chmod +x /tmp/setup.sh
+          /tmp/setup.sh \
+            --project ${ProjectName} \
+            --instance-type ${InstanceType} \
+            --volume-size ${VolumeSize} \
+            --git ${GitRepository} \
+            --branch ${GitBranch} \
+            --ssh-key-name ${SSHKeyName} \
+            --git-user-name "${GitUserName}" \
+            --git-user-email "${GitUserEmail}"
+
+  # OnDemand Instance
+  ProjectOnDemandInstance:
+    Type: AWS::EC2::Instance
+    Condition: IsOnDemandInstance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0c9c942bd7bf113a2
+      SecurityGroupIds:
+        - !Ref ProjectSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sdf
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSize
+            DeleteOnTermination: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-GPU-Instance-OnDemand'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: PricingModel
+          Value: ondemand
+        - Key: InstanceType
+          Value: !Ref InstanceType
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          # Manually inject the public and private keys for initial SSH access and Git
+          mkdir -p "/home/ubuntu/.ssh"
+
+          # Inject public key for SSH access to EC2
+          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/authorized_keys"
+
+          # Inject the public key and private key with dynamic key name
+          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/${SSHKeyName}"
+
+          # Set correct permissions
+          chown -R ubuntu:ubuntu "/home/ubuntu/.ssh"
+          chmod 700 "/home/ubuntu/.ssh"
+          chmod 600 "/home/ubuntu/.ssh/authorized_keys"
+          chmod 644 "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          chmod 600 "/home/ubuntu/.ssh/${SSHKeyName}"
+          echo "Public and private keys for EC2 access and Git have been injected."
+
+          # Export variables for the setup script to use.
+          export SSHPublicKey='${SSHPublicKey}'
+          export SSHPrivateKey='${SSHPrivateKey}'
+
+          # Construct and run the main setup script
+          SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
+          echo "Downloading setup script from: $SETUP_SCRIPT_URL"
+
+          # Download and verify setup script
+          if ! curl -fsSL "$SETUP_SCRIPT_URL" -o /tmp/setup.sh; then
+            echo "ERROR: Failed to download setup script from $SETUP_SCRIPT_URL"
+            exit 1
+          fi
+
+          if [ ! -s /tmp/setup.sh ]; then
+            echo "ERROR: Downloaded setup script is empty"
+            exit 1
+          fi
+
+          chmod +x /tmp/setup.sh
+          /tmp/setup.sh \
+            --project ${ProjectName} \
+            --instance-type ${InstanceType} \
+            --volume-size ${VolumeSize} \
+            --git ${GitRepository} \
+            --branch ${GitBranch} \
+            --ssh-key-name ${SSHKeyName} \
+            --git-user-name "${GitUserName}" \
+            --git-user-email "${GitUserEmail}"
+
+  ProjectElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-GPU-ElasticIP'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: PricingModel
+          Value: !Ref PricingModel
+
+  ProjectEIPAssociationSpot:
+    Type: AWS::EC2::EIPAssociation
+    Condition: IsSpotInstance
+    Properties:
+      InstanceId: !Ref ProjectSpotInstance
+      EIP: !Ref ProjectElasticIP
+
+  ProjectEIPAssociationOnDemand:
+    Type: AWS::EC2::EIPAssociation
+    Condition: IsOnDemandInstance
+    Properties:
+      InstanceId: !Ref ProjectOnDemandInstance
+      EIP: !Ref ProjectElasticIP
+
+Outputs:
+  StaticIP:
+    Description: Elastic IP address
+    Value: !Ref ProjectElasticIP
+
+  JupyterURL:
+    Description: Jupyter Notebook URL
+    Value: !Sub 'http://${ProjectElasticIP}:8888 (token: qcbmtoken)'
+
+  VSCodeURL:
+    Description: VSCode Web URL (if container running)
+    Value: !Sub 'http://${ProjectElasticIP}:8080'
+
+  ContainerSSH:
+    Description: SSH access to container (port 2222)
+    Value: !If
+      - IsSpotInstance
+      - !Sub 'ssh -p 2222 ${GitUserName}@${ProjectElasticIP}'
+      - !Sub 'ssh -p 2222 ${GitUserName}@${ProjectElasticIP}'
+
+  EC2SSH:
+    Description: SSH access to EC2 instance
+    Value: !Sub 'ssh ubuntu@${ProjectElasticIP}'
+
+  InstanceInfo:
+    Description: Instance type, pricing model, and estimated cost
+    Value: !If
+      - IsSpotInstance
+      - !Sub '${InstanceType} (Spot - Max: ${SpotMaxPrice}/hour, ~60-90% savings)'
+      - !Sub '${InstanceType} (OnDemand - Reliable but expensive)'
+
+  PricingModel:
+    Description: Selected pricing model
+    Value: !Ref PricingModel
+
+  CostTips:
+    Description: Cost optimization tips
+    Value: !If
+      - IsSpotInstance
+      - 'Spot: Save frequently, data persists on EBS. Re-run script if interrupted.'
+      - 'OnDemand: Reliable but expensive. Consider switching to Spot for development.'
+
+  NextSteps:
+    Description: What to do next
+    Value: !Sub 'GPU environment ready! Connect via SSH or use Jupyter/VSCode Web interfaces.'
+
+  GPUInfo:
+    Description: GPU specifications for the instance type
+    Value: !If
+      - !Equals [!Ref InstanceType, 'g4dn.xlarge']
+      - '1x NVIDIA T4 (16GB VRAM) - Good for development'
+      - !If
+        - !Equals [!Ref InstanceType, 'g4dn.2xlarge']
+        - '1x NVIDIA T4 (16GB VRAM) - Balanced GPU/CPU'
+        - !If
+          - !Equals [!Ref InstanceType, 'g5.xlarge']
+          - '1x NVIDIA A10G (24GB VRAM) - Latest generation'
+          - !If
+            - !Equals [!Ref InstanceType, 'g5.2xlarge']
+            - '1x NVIDIA A10G (24GB VRAM) - More CPU/RAM'
+            - !If
+              - !Equals [!Ref InstanceType, 'p3.2xlarge']
+              - '1x NVIDIA V100 (16GB VRAM) - High-performance ML'
+              - 'Check AWS documentation for GPU specifications'
