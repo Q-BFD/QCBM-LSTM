@@ -39,15 +39,15 @@ Parameters:
     Description: Size of the EBS volume in GiB (larger for GPU workloads)
   SSHPublicKey:
     Type: String
-    Description: SSH public key to be added to authorized_keys for EC2 access
-    AllowedPattern: ^ssh-(rsa|ed25519|ecdsa) [A-Za-z0-9+/]+(={0,2})( .*)?$
-    ConstraintDescription: Must be a valid SSH public key
+    Description: Base64-encoded SSH public key to be added to authorized_keys for EC2 access
+    MinLength: 1
+    ConstraintDescription: Base64-encoded SSH public key is required
   SSHPrivateKey:
     Type: String
-    Description: SSH private key to be injected into the container for Git operations
+    Description: Base64-encoded SSH private key to be injected into the container for Git operations
     NoEcho: true
     MinLength: 1
-    ConstraintDescription: SSH private key is required
+    ConstraintDescription: Base64-encoded SSH private key is required
   GitRepository:
     Type: String
     Description: Git repository URL to clone
@@ -163,12 +163,10 @@ Resources:
           # Manually inject the public and private keys for initial SSH access and Git
           mkdir -p "/home/ubuntu/.ssh"
 
-          # Inject public key for SSH access to EC2
-          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/authorized_keys"
-
-          # Inject the public key and private key with dynamic key name
-          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
-          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/${SSHKeyName}"
+          # Decode base64-encoded SSH keys
+          echo '${SSHPublicKey}' | base64 -d > "/home/ubuntu/.ssh/authorized_keys"
+          echo '${SSHPublicKey}' | base64 -d > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          echo '${SSHPrivateKey}' | base64 -d > "/home/ubuntu/.ssh/${SSHKeyName}"
 
           # Set correct permissions
           chown -R ubuntu:ubuntu "/home/ubuntu/.ssh"
@@ -176,11 +174,11 @@ Resources:
           chmod 600 "/home/ubuntu/.ssh/authorized_keys"
           chmod 644 "/home/ubuntu/.ssh/${SSHKeyName}.pub"
           chmod 600 "/home/ubuntu/.ssh/${SSHKeyName}"
-          echo "Public and private keys for EC2 access and Git have been injected."
+          echo "Base64-encoded public and private keys have been decoded and injected."
 
-          # Export variables for the setup script to use.
-          export SSHPublicKey='${SSHPublicKey}'
-          export SSHPrivateKey='${SSHPrivateKey}'
+          # Export decoded SSH keys for the setup script to use.
+          export SSHPublicKey="$(echo '${SSHPublicKey}' | base64 -d)"
+          export SSHPrivateKey="$(echo '${SSHPrivateKey}' | base64 -d)"
 
           # Construct and run the main setup script
           SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"
@@ -240,12 +238,10 @@ Resources:
           # Manually inject the public and private keys for initial SSH access and Git
           mkdir -p "/home/ubuntu/.ssh"
 
-          # Inject public key for SSH access to EC2
-          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/authorized_keys"
-
-          # Inject the public key and private key with dynamic key name
-          echo '${SSHPublicKey}' > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
-          echo '${SSHPrivateKey}' > "/home/ubuntu/.ssh/${SSHKeyName}"
+          # Decode base64-encoded SSH keys
+          echo '${SSHPublicKey}' | base64 -d > "/home/ubuntu/.ssh/authorized_keys"
+          echo '${SSHPublicKey}' | base64 -d > "/home/ubuntu/.ssh/${SSHKeyName}.pub"
+          echo '${SSHPrivateKey}' | base64 -d > "/home/ubuntu/.ssh/${SSHKeyName}"
 
           # Set correct permissions
           chown -R ubuntu:ubuntu "/home/ubuntu/.ssh"
@@ -253,11 +249,11 @@ Resources:
           chmod 600 "/home/ubuntu/.ssh/authorized_keys"
           chmod 644 "/home/ubuntu/.ssh/${SSHKeyName}.pub"
           chmod 600 "/home/ubuntu/.ssh/${SSHKeyName}"
-          echo "Public and private keys for EC2 access and Git have been injected."
+          echo "Base64-encoded public and private keys have been decoded and injected."
 
-          # Export variables for the setup script to use.
-          export SSHPublicKey='${SSHPublicKey}'
-          export SSHPrivateKey='${SSHPrivateKey}'
+          # Export decoded SSH keys for the setup script to use.
+          export SSHPublicKey="$(echo '${SSHPublicKey}' | base64 -d)"
+          export SSHPrivateKey="$(echo '${SSHPrivateKey}' | base64 -d)"
 
           # Construct and run the main setup script
           SETUP_SCRIPT_URL="https://raw.githubusercontent.com/${SetupScriptOrg}/${SetupScriptRepo}/${SetupScriptBranch}/${SetupScriptPath}"

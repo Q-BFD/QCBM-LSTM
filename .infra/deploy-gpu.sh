@@ -282,7 +282,7 @@ STACK_NAME="${PROJECT_NAME}-dev-gpu-${PRICING_MODEL}"
 echo "📚 Stack Name: $STACK_NAME"
 echo "🔐 AWS Key Name: $AWS_KEY_NAME"
 
-# SSH 키 로드
+# SSH 키 로드 및 Base64 인코딩
 SSH_PUBLIC_KEY=$(cat "$EXPANDED_PUBLIC_KEY")
 SSH_PRIVATE_KEY=$(cat "$EXPANDED_PRIVATE_KEY")
 
@@ -291,7 +291,12 @@ if [ -z "$SSH_PUBLIC_KEY" ] || [ -z "$SSH_PRIVATE_KEY" ]; then
     exit 1
 fi
 
-echo "🔐 Using corresponding private key for Git operations in container"
+# 멀티라인 SSH 키를 안전하게 전달하기 위해 Base64 인코딩
+# macOS/Linux 호환성을 위해 줄바꿈 제거
+SSH_PUBLIC_KEY_B64=$(echo "$SSH_PUBLIC_KEY" | base64 | tr -d '\n')
+SSH_PRIVATE_KEY_B64=$(echo "$SSH_PRIVATE_KEY" | base64 | tr -d '\n')
+
+echo "🔐 SSH keys encoded for safe CloudFormation transfer"
 
 # =====================================
 # CloudFormation 배포
@@ -313,33 +318,51 @@ else
 fi
 echo ""
 
-# CloudFormation 파라미터 설정
-CF_PARAMS="ProjectName=$PROJECT_NAME \
-  SSHPublicKey=\"$SSH_PUBLIC_KEY\" \
-  SSHPrivateKey=\"$SSH_PRIVATE_KEY\" \
-  InstanceType=$INSTANCE_TYPE \
-  VolumeSize=$VOLUME_SIZE \
-  PricingModel=$PRICING_MODEL \
-  GitRepository=\"$GIT_REPOSITORY\" \
-  GitBranch=$GIT_BRANCH \
-  SetupScriptOrg=$SETUP_SCRIPT_ORG \
-  SetupScriptRepo=$SETUP_SCRIPT_REPO \
-  SetupScriptBranch=$SETUP_SCRIPT_BRANCH \
-  SetupScriptPath=$SETUP_SCRIPT_PATH \
-  SSHKeyName=$SSH_KEY_NAME \
-  GitUserName=$GIT_USER_NAME \
-  GitUserEmail=$GIT_USER_EMAIL"
-
-# Spot 가격은 spot 모드일 때만 추가
+# CloudFormation 배포 (base64 인코딩된 SSH 키 사용)
 if [ "$PRICING_MODEL" = "spot" ]; then
-    CF_PARAMS="$CF_PARAMS SpotMaxPrice=$SPOT_MAX_PRICE"
+    aws cloudformation deploy \
+      --template-file cloudformation-gpu.yml \
+      --stack-name "$STACK_NAME" \
+      --parameter-overrides \
+        ProjectName="$PROJECT_NAME" \
+        SSHPublicKey="$SSH_PUBLIC_KEY_B64" \
+        SSHPrivateKey="$SSH_PRIVATE_KEY_B64" \
+        InstanceType="$INSTANCE_TYPE" \
+        VolumeSize="$VOLUME_SIZE" \
+        PricingModel="$PRICING_MODEL" \
+        SpotMaxPrice="$SPOT_MAX_PRICE" \
+        GitRepository="$GIT_REPOSITORY" \
+        GitBranch="$GIT_BRANCH" \
+        SetupScriptOrg="$SETUP_SCRIPT_ORG" \
+        SetupScriptRepo="$SETUP_SCRIPT_REPO" \
+        SetupScriptBranch="$SETUP_SCRIPT_BRANCH" \
+        SetupScriptPath="$SETUP_SCRIPT_PATH" \
+        SSHKeyName="$SSH_KEY_NAME" \
+        GitUserName="$GIT_USER_NAME" \
+        GitUserEmail="$GIT_USER_EMAIL" \
+      --capabilities CAPABILITY_NAMED_IAM
+else
+    aws cloudformation deploy \
+      --template-file cloudformation-gpu.yml \
+      --stack-name "$STACK_NAME" \
+      --parameter-overrides \
+        ProjectName="$PROJECT_NAME" \
+        SSHPublicKey="$SSH_PUBLIC_KEY_B64" \
+        SSHPrivateKey="$SSH_PRIVATE_KEY_B64" \
+        InstanceType="$INSTANCE_TYPE" \
+        VolumeSize="$VOLUME_SIZE" \
+        PricingModel="$PRICING_MODEL" \
+        GitRepository="$GIT_REPOSITORY" \
+        GitBranch="$GIT_BRANCH" \
+        SetupScriptOrg="$SETUP_SCRIPT_ORG" \
+        SetupScriptRepo="$SETUP_SCRIPT_REPO" \
+        SetupScriptBranch="$SETUP_SCRIPT_BRANCH" \
+        SetupScriptPath="$SETUP_SCRIPT_PATH" \
+        SSHKeyName="$SSH_KEY_NAME" \
+        GitUserName="$GIT_USER_NAME" \
+        GitUserEmail="$GIT_USER_EMAIL" \
+      --capabilities CAPABILITY_NAMED_IAM
 fi
-
-aws cloudformation deploy \
-  --template-file cloudformation-gpu.yml \
-  --stack-name "$STACK_NAME" \
-  --parameter-overrides $CF_PARAMS \
-  --capabilities CAPABILITY_NAMED_IAM
 
 if [ $? -eq 0 ]; then
     echo ""
