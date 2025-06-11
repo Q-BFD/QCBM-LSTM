@@ -355,19 +355,4 @@ Outputs:
 
   GPUInfo:
     Description: GPU specifications for the instance type
-    Value: !If
-      - !Equals [!Ref InstanceType, 'g4dn.xlarge']
-      - '1x NVIDIA T4 (16GB VRAM) - Good for development'
-      - !If
-        - !Equals [!Ref InstanceType, 'g4dn.2xlarge']
-        - '1x NVIDIA T4 (16GB VRAM) - Balanced GPU/CPU'
-        - !If
-          - !Equals [!Ref InstanceType, 'g5.xlarge']
-          - '1x NVIDIA A10G (24GB VRAM) - Latest generation'
-          - !If
-            - !Equals [!Ref InstanceType, 'g5.2xlarge']
-            - '1x NVIDIA A10G (24GB VRAM) - More CPU/RAM'
-            - !If
-              - !Equals [!Ref InstanceType, 'p3.2xlarge']
-              - '1x NVIDIA V100 (16GB VRAM) - High-performance ML'
-              - 'Check AWS documentation for GPU specifications'
+    Value: !Sub '${InstanceType} - GPU-enabled instance for ML/quantum computing workloads'
