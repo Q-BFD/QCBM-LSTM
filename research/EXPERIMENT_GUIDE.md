@@ -31,7 +31,20 @@ bash sh/run.sh default
 # 데이터 파일 없음 → 관리자에게 data 폴더 요청
 # Import 오류 → 위 체크리스트로 확인
 # WandB 오류 → 오프라인 모드: WANDB_MODE=offline bash sh/run.sh
+# Jupyter Notebook Kernel 오류 → Container에 Jupyter 확장 프로그램 설치 필요
 ```
+
+#### **📓 Jupyter Notebook 사용 시 주의사항**
+- **Container 환경에서 Jupyter Notebook을 사용하려면 Jupyter 확장 프로그램이 설치되어 있어야 합니다**
+- VS Code에서 `.ipynb` 파일 실행 시 kernel을 찾을 수 없다는 오류가 발생하면:
+  ```bash
+  # Container 내부에서 Jupyter 관련 패키지 설치
+  pip install jupyter ipykernel
+  
+  # 또는 requirements.txt에 추가하여 환경 구성
+  echo "jupyter" >> requirements.txt
+  echo "ipykernel" >> requirements.txt
+  ```
 
 ---
 
