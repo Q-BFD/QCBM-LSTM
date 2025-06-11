@@ -9,16 +9,25 @@
 # =====================================
 # 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
 # 예: id_ed25519_github_yourname, id_rsa_company_yourname
-SSH_KEY_NAME="id_ed25519_github_qb_frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
+SSH_KEY_NAME="id_ed25519_github_qb-frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
 
 # =====================================
 # 자동 사용자 이름 추출 함수
 # =====================================
 extract_username_from_key() {
     local key_name="$1"
-    # 마지막 _ 뒤의 부분을 추출하고, _를 -로 변환
-    local username=$(echo "$key_name" | sed 's/.*_\([^_]*\)$/\1/' | tr '_' '-')
-    echo "$username"
+    
+    # 키 이름에 underscore가 사용자 이름 부분에 있는지 검사
+    local username_part=$(echo "$key_name" | sed 's/.*_\([^_]*\)$/\1/')
+    if [[ "$username_part" == *"_"* ]]; then
+        echo "❌ ERROR: 사용자 이름 부분에 underscore(_)를 사용할 수 없습니다: '$username_part'"
+        echo "   키 이름을 다음 형식으로 변경하세요: id_type_provider_username"
+        echo "   예: id_ed25519_github_qb-frontier (not qb_frontier)"
+        exit 1
+    fi
+    
+    # 마지막 _ 뒤의 부분을 사용자 이름으로 사용 (이미 hyphen이어야 함)
+    echo "$username_part"
 }
 
 # 자동으로 사용자 이름과 키 경로 설정

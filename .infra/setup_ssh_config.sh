@@ -7,6 +7,37 @@
 # Project name from argument or default
 PROJECT_NAME="${1:-qcbm}"  # First argument or default to 'qcbm'
 
+# =====================================
+# 🔑 SSH Key Configuration (deploy-cpu.sh와 동일한 설정)
+# =====================================
+# 패턴: id_rsa_..._USERNAME 또는 id_ed25519_..._USERNAME
+# 예: id_ed25519_github_yourname, id_rsa_company_yourname
+SSH_KEY_NAME="id_ed25519_github_qb_frontier"  # 🔑 여기에 실제 키 이름을 입력하세요!
+
+# =====================================
+# 자동 사용자 이름 추출 함수
+# =====================================
+extract_username_from_key() {
+    local key_name="$1"
+    
+    # 키 이름에 underscore가 사용자 이름 부분에 있는지 검사
+    local username_part=$(echo "$key_name" | sed 's/.*_\([^_]*\)$/\1/')
+    if [[ "$username_part" == *"_"* ]]; then
+        echo "❌ ERROR: 사용자 이름 부분에 underscore(_)를 사용할 수 없습니다: '$username_part'"
+        echo "   키 이름을 다음 형식으로 변경하세요: id_type_provider_username"
+        echo "   예: id_ed25519_github_qb-frontier (not qb_frontier)"
+        exit 1
+    fi
+    
+    # 마지막 _ 뒤의 부분을 사용자 이름으로 사용 (이미 hyphen이어야 함)
+    echo "$username_part"
+}
+
+# 자동으로 사용자 이름과 키 경로 설정
+DEV_USERNAME=$(extract_username_from_key "$SSH_KEY_NAME")
+SSH_PRIVATE_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME"
+SSH_PUBLIC_KEY_FILE="$HOME/.ssh/$SSH_KEY_NAME.pub"
+
 # =============================
 # Usage Information
 # =============================
@@ -21,10 +52,17 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "📦 This will configure SSH access to:"
     echo "   - EC2 Instance: {PROJECT_NAME}"
     echo "   - Docker Container: {PROJECT_NAME}-container"
+    echo ""
+    echo "🔑 SSH Key Configuration:"
+    echo "   - Key Name: $SSH_KEY_NAME"
+    echo "   - User Name: $DEV_USERNAME"
+    echo "   - Private Key: $SSH_PRIVATE_KEY_FILE"
     exit 0
 fi
 
 echo "🎯 Project Name: $PROJECT_NAME"
+echo "🔑 SSH Key: $SSH_KEY_NAME"
+echo "👤 Dev User: $DEV_USERNAME"
 
 # =============================
 # Configuration Variables
@@ -35,13 +73,12 @@ USER_NAME="ubuntu"                           # EC2 기본 사용자 (Ubuntu 기�
 PORT=22                                      # EC2 SSH 포트
 CONFIG_FILE="$HOME/.ssh/config"              # SSH 설정파일 경로
 
-# ⭐ 사용할 개인 SSH 키 파일 우선순위
-  # 첫 번째로 발견되는 키를 EC2 및 컨테이너 접속에 모두 사용합니다.
-  # 🔑 주 개발 키가 있다면 첫 번째에 추가하세요 (예: "$HOME/.ssh/id_ed25519_github_yourname")
-  PERSONAL_SSH_KEY_FILES=(
-      "$HOME/.ssh/id_ed25519"                      # 🔑 기본 ed25519 키
-      "$HOME/.ssh/id_rsa"                          # 🔑 RSA 키 (백업)
-    "$HOME/.ssh/id_ecdsa"                        # 🔑 ECDSA 키 (백업)
+# ⭐ 사용할 개인 SSH 키 파일 우선순위 (동적으로 생성)
+PERSONAL_SSH_KEY_FILES=(
+    "$SSH_PRIVATE_KEY_FILE"                  # 🔑 주 개발 키 (최우선)
+    "$HOME/.ssh/id_ed25519"                  # 🔑 기본 ed25519 키
+    "$HOME/.ssh/id_rsa"                      # 🔑 RSA 키 (백업)
+    "$HOME/.ssh/id_ecdsa"                    # 🔑 ECDSA 키 (백업)
 )
 
 # =============================
@@ -95,6 +132,10 @@ if [ -z "$PRIMARY_SSH_KEY" ]; then
     for key_file in "${PERSONAL_SSH_KEY_FILES[@]}"; do
         echo "   - $key_file"
     done
+    echo ""
+    echo "💡 If you need to update the SSH key name, edit this file:"
+    echo "   SSH_KEY_NAME=\"$SSH_KEY_NAME\""
+    echo "   This should match the key name used in deploy-cpu.sh"
     exit 1
 fi
 echo "✅ Using primary SSH key for all connections: $PRIMARY_SSH_KEY"
@@ -145,7 +186,7 @@ Host ${ALIAS_NAME}
 # ${PROJECT_NAME} Development Environment - Docker Container
 Host ${ALIAS_NAME}-container
     HostName ${EIP}
-            User your-username  # deploy-cpu.sh에서 추출된 사용자 이름으로 설정
+    User ${DEV_USERNAME}
     Port 2222
     IdentityFile ${PRIMARY_SSH_KEY}
     IdentitiesOnly yes
@@ -169,7 +210,7 @@ echo "🎉 SSH config 설정 완료!"
 echo ""
 echo "📋 사용 가능한 연결:"
 echo "   🖥️  EC2 인스턴스:     ssh ${ALIAS_NAME}"
-echo "   🐳 Docker 컨테이너:   ssh ${ALIAS_NAME}-container"
+echo "   🐳 Docker 컨테이너:   ssh ${ALIAS_NAME}-container (User: ${DEV_USERNAME})"
 echo ""
 echo "🔗 추가 정보:"
 echo "   📱 VSCode Web:        http://${EIP}:8080"

@@ -15,10 +15,16 @@
 ```
 id_[키타입]_[서비스]_[사용자이름]
 
-예시:
-- id_ed25519_github_johndoe     → 사용자: john-doe
-- id_rsa_company_alice_kim      → 사용자: alice-kim
+⚠️ 중요: 사용자 이름 부분에는 underscore(_) 사용 금지!
+
+✅ 올바른 예시:
+- id_ed25519_github_john-doe    → 사용자: john-doe
+- id_rsa_company_alice-kim      → 사용자: alice-kim
 - id_ed25519_personal_bobsmith  → 사용자: bobsmith
+
+❌ 잘못된 예시:
+- id_ed25519_github_john_doe    → ERROR (underscore 사용)
+- id_rsa_company_alice_kim      → ERROR (underscore 사용)
 ```
 
 #### 지원되는 키 타입
@@ -68,7 +74,7 @@ id_[키타입]_[서비스]_[사용자이름]
 - **SSH 접속 계정**: 추출된 사용자 이름
 - **JupyterLab 작업 디렉토리**: `/home/yourname/projectname`
 
-> 💡 **참고**: 사용자 이름의 `_`는 자동으로 `-`로 변환됩니다 (Docker 호환성)
+> 💡 **참고**: 키 이름의 사용자 부분은 이미 hyphen(`-`)을 사용해야 합니다. Underscore(`_`) 사용 시 오류가 발생합니다.
 
 ---
 

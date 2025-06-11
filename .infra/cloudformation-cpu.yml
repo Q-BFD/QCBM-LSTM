@@ -24,6 +24,7 @@ Parameters:
       - c5.large
       - c5.xlarge
       - c5.2xlarge
+      - m7i.2xlarge
       - m7i.4xlarge
     Description: CPU instance type for testing (x86_64 Intel architecture only)
   VolumeSize:
