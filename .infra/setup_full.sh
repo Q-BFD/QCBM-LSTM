@@ -195,12 +195,24 @@ is_mounted() {
 EBS_DEVICE=""
 EBS_SUCCESS=false
 
-log "🔍 Strategy 1: Looking for NVMe devices around ${VOLUME_SIZE}GB..."
-for attempt in {1..60}; do
-    log "⏳ Attempt ${attempt}/60: Scanning for EBS volume..."
+# 볼륨 크기 허용 범위 설정 (CloudFormation에서 설정한 크기 ±10GB)
+expected_min=$((VOLUME_SIZE - 10))
+expected_max=$((VOLUME_SIZE + 10))
+
+# 최소값이 음수가 되지 않도록 보정
+if [ "${expected_min}" -lt 1 ]; then
+    expected_min=1
+fi
+
+log "🔍 Enhanced EBS volume detection with 5 strategies..."
+log "📏 Expected volume size: ${VOLUME_SIZE}GB (accepting range: ${expected_min}-${expected_max}GB)"
+
+for attempt in {1..30}; do
+    log "⏳ Attempt ${attempt}/30: Scanning for EBS volume..."
     log "📊 Current block devices:"
     lsblk | tee -a "${LOG_FILE}"
     
+    log "🔍 Strategy 1: Scanning NVMe devices..."
     for nvme_device in /dev/nvme*n1; do
         if [ -e "${nvme_device}" ]; then
             if ls "${nvme_device}p1" 1>/dev/null 2>&1; then
@@ -214,7 +226,7 @@ for attempt in {1..60}; do
                 device_size_gb=$((DEVICE_SIZE / 1024 / 1024 / 1024))
                 log "🔍 Found NVMe device ${target} with size: ${device_size_gb} GB"
                 
-                if [ "${device_size_gb}" -ge 48 ] && [ "${device_size_gb}" -le 52 ] && ! is_mounted "${target}"; then
+                if [ "${device_size_gb}" -ge "${expected_min}" ] && [ "${device_size_gb}" -le "${expected_max}" ] && ! is_mounted "${target}"; then
                     if ! lsblk "${target}" | grep -q "/"; then
                         EBS_DEVICE="${target}"
                         success_log "Found EBS volume: ${EBS_DEVICE} (${device_size_gb} GB)"
@@ -235,7 +247,9 @@ for attempt in {1..60}; do
             device_type=$(echo "${line}" | awk '{print $4}')
             
             if [ "${device_type}" = "disk" ] && [ "${mount_point}" = "none" ]; then
-                if echo "${device_size}" | grep -E "(4[89]|5[0-2])(\.|G|$)"; then
+                # 장치 크기를 숫자로 변환 (예: "50G" -> 50)
+                device_size_num=$(echo "${device_size}" | sed 's/[^0-9]//g')
+                if [ -n "${device_size_num}" ] && [ "${device_size_num}" -ge "${expected_min}" ] && [ "${device_size_num}" -le "${expected_max}" ]; then
                     full_device="/dev/${device_name}"
                     if [ -e "${full_device}" ] && ! is_mounted "${full_device}"; then
                         EBS_DEVICE="${full_device}"
@@ -249,38 +263,97 @@ for attempt in {1..60}; do
     fi
     
     if [ -z "${EBS_DEVICE}" ] && command -v aws >/dev/null 2>&1; then
-        log "🔍 Strategy 3: Using AWS CLI to find attached volumes..."
-        INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+        log "🔍 Strategy 3: Using AWS CLI to find attached volumes (with timeout)..."
+        INSTANCE_ID=$(timeout 10 curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
         if [ -n "${INSTANCE_ID}" ]; then
-            aws ec2 describe-volumes \
+            log "⏳ Querying AWS API for attached volumes (timeout: 30s)..."
+            AWS_OUTPUT=$(timeout 30 aws ec2 describe-volumes \
                 --filters "Name=attachment.instance-id,Values=${INSTANCE_ID}" \
                 --query 'Volumes[?Size==`'"${VOLUME_SIZE}"'`].Attachments[0].Device' \
-                --output text 2>/dev/null | while read -r device; do
-                if [ "${device}" != "None" ] && [ -n "${device}" ]; then
-                    actual_device=$(echo "${device}" | sed 's/xvd/nvme/; s/f$/1n1/')
-                    if [ -e "${actual_device}" ] && ! is_mounted "${actual_device}"; then
-                        echo "${actual_device}" > /tmp/ebs_device
-                        break
-                    fi
-                fi
-            done
+                --output text 2>/dev/null || echo "")
             
-            if [ -f /tmp/ebs_device ]; then
-                EBS_DEVICE=$(cat /tmp/ebs_device)
-                rm -f /tmp/ebs_device
-                if [ -n "${EBS_DEVICE}" ]; then
-                    success_log "Found EBS volume via AWS CLI: ${EBS_DEVICE}"
-                    EBS_SUCCESS=true
-                    break
-                fi
+            if [ -n "${AWS_OUTPUT}" ] && [ "${AWS_OUTPUT}" != "None" ]; then
+                for device in ${AWS_OUTPUT}; do
+                    if [ "${device}" != "None" ] && [ -n "${device}" ]; then
+                        # Convert xvdf to nvme1n1 for NVMe instances
+                        actual_device=$(echo "${device}" | sed 's/xvd/nvme/; s/f$/1n1/')
+                        log "🔍 AWS reported device: ${device} -> checking: ${actual_device}"
+                        if [ -e "${actual_device}" ] && ! is_mounted "${actual_device}"; then
+                            EBS_DEVICE="${actual_device}"
+                            success_log "Found EBS volume via AWS CLI: ${EBS_DEVICE}"
+                            EBS_SUCCESS=true
+                            break 2
+                        fi
+                    fi
+                done
+            else
+                log "⚠️  AWS CLI query completed but no suitable volumes found or timed out"
             fi
-        fi
-    fi
-    
-    if [ -z "${EBS_DEVICE}" ]; then
-        log "⏳ No EBS volume found yet, waiting 10 seconds..."
-        sleep 10
-    fi
+                 else
+             log "⚠️  Could not get instance ID from metadata service"
+         fi
+     fi
+     
+     if [ -z "${EBS_DEVICE}" ]; then
+         log "🔍 Strategy 4: Checking common EBS device paths..."
+         # 일반적인 EBS 장치 경로들을 직접 체크
+         for common_device in "/dev/nvme1n1" "/dev/nvme2n1" "/dev/xvdf" "/dev/xvdg"; do
+             if [ -e "${common_device}" ] && ! is_mounted "${common_device}"; then
+                 # 크기 확인
+                 if command -v lsblk >/dev/null 2>&1; then
+                     device_size_bytes=$(lsblk -b -n -o SIZE "${common_device}" 2>/dev/null | head -1)
+                     if [ -n "${device_size_bytes}" ]; then
+                         device_size_gb=$((device_size_bytes / 1024 / 1024 / 1024))
+                         log "🔍 Found common device ${common_device} with size: ${device_size_gb} GB"
+                         if [ "${device_size_gb}" -ge "${expected_min}" ] && [ "${device_size_gb}" -le "${expected_max}" ]; then
+                             EBS_DEVICE="${common_device}"
+                             success_log "Found EBS volume via strategy 4: ${EBS_DEVICE} (${device_size_gb} GB)"
+                             EBS_SUCCESS=true
+                             break 2
+                         fi
+                     fi
+                 fi
+             fi
+         done
+     fi
+     
+     if [ -z "${EBS_DEVICE}" ]; then
+         log "🔍 Strategy 5: Finding largest unmounted disk..."
+         # 마지막 수단: 가장 큰 unmounted 디스크 찾기
+         largest_device=""
+         largest_size=0
+         
+         while IFS= read -r line; do
+             device_name=$(echo "${line}" | awk '{print $1}')
+             device_size=$(echo "${line}" | awk '{print $2}')
+             mount_point=$(echo "${line}" | awk '{print $3}')
+             device_type=$(echo "${line}" | awk '{print $4}')
+             
+             if [ "${device_type}" = "disk" ] && [ "${mount_point}" = "none" ]; then
+                 device_size_num=$(echo "${device_size}" | sed 's/[^0-9]//g')
+                 if [ -n "${device_size_num}" ] && [ "${device_size_num}" -gt "${largest_size}" ] && [ "${device_size_num}" -ge 10 ]; then
+                     full_device="/dev/${device_name}"
+                     if [ -e "${full_device}" ]; then
+                         largest_device="${full_device}"
+                         largest_size="${device_size_num}"
+                     fi
+                 fi
+             fi
+         done < <(get_block_devices)
+         
+         if [ -n "${largest_device}" ] && [ "${largest_size}" -ge 10 ]; then
+             log "🔍 Found largest unmounted disk: ${largest_device} (${largest_size} GB)"
+             EBS_DEVICE="${largest_device}"
+             success_log "Found EBS volume via strategy 5: ${EBS_DEVICE} (${largest_size} GB)"
+             EBS_SUCCESS=true
+             break
+         fi
+     fi
+     
+     if [ -z "${EBS_DEVICE}" ]; then
+         log "⏳ No EBS volume found yet, waiting 10 seconds..."
+         sleep 10
+     fi
 done
 
 MOUNT_OK=false
@@ -340,7 +413,11 @@ if [ "${EBS_SUCCESS}" = "true" ] && [ -n "${EBS_DEVICE}" ]; then
         exit 1
     fi
 else
-    error_log "Could not find EBS volume after 60 attempts"
+    error_log "Could not find EBS volume after 30 attempts (tried 5 different strategies)"
+    log "🔍 Debug info - final attempt:"
+    log "  - Volume size expected: ${VOLUME_SIZE}GB (range: ${expected_min}-${expected_max}GB)"
+    log "  - Current block devices:"
+    lsblk | tee -a "${LOG_FILE}"
     exit 1
 fi
 
