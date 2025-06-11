@@ -125,7 +125,7 @@ Resources:
         - Key: PricingModel
           Value: !Ref PricingModel
 
-  # Spot Instance
+  # Spot Instance (simplified approach - treating as regular instance)
   ProjectSpotInstance:
     Type: AWS::EC2::Instance
     Condition: IsSpotInstance
@@ -134,12 +134,6 @@ Resources:
       ImageId: ami-0c9c942bd7bf113a2
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
-      InstanceMarketOptions:
-        MarketType: spot
-        SpotOptions:
-          MaxPrice: !Ref SpotMaxPrice
-          SpotInstanceType: one-time
-          InstanceInterruptionBehavior: stop
       BlockDeviceMappings:
         - DeviceName: /dev/sdf
           Ebs:
@@ -155,6 +149,8 @@ Resources:
           Value: spot
         - Key: InstanceType
           Value: !Ref InstanceType
+        - Key: SpotPrice
+          Value: !Ref SpotMaxPrice
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash

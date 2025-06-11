@@ -238,7 +238,7 @@ echo "🎯 Project Name: $PROJECT_NAME"
 echo "📚 Stack Name: ${PROJECT_NAME}-dev-cpu"
 echo "🔐 AWS Key Name: $AWS_KEY_NAME"
 
-# SSH 키 로드 및 Base64 인코딩
+# SSH 키 로드
 SSH_PUBLIC_KEY=$(cat "$EXPANDED_PUBLIC_KEY")
 SSH_PRIVATE_KEY=$(cat "$EXPANDED_PRIVATE_KEY")
 
@@ -247,12 +247,7 @@ if [ -z "$SSH_PUBLIC_KEY" ] || [ -z "$SSH_PRIVATE_KEY" ]; then
     exit 1
 fi
 
-# 멀티라인 SSH 키를 안전하게 전달하기 위해 Base64 인코딩
-# macOS/Linux 호환성을 위해 줄바꿈 제거
-SSH_PUBLIC_KEY_B64=$(echo "$SSH_PUBLIC_KEY" | base64 | tr -d '\n')
-SSH_PRIVATE_KEY_B64=$(echo "$SSH_PRIVATE_KEY" | base64 | tr -d '\n')
-
-echo "🔐 SSH keys encoded for safe CloudFormation transfer"
+echo "🔐 Using corresponding private key for Git operations in container"
 
 # =====================================
 # CloudFormation 배포
@@ -276,8 +271,8 @@ aws cloudformation deploy \
   --stack-name "$STACK_NAME" \
   --parameter-overrides \
     ProjectName="$PROJECT_NAME" \
-    SSHPublicKey="$SSH_PUBLIC_KEY_B64" \
-    SSHPrivateKey="$SSH_PRIVATE_KEY_B64" \
+    SSHPublicKey="$SSH_PUBLIC_KEY" \
+    SSHPrivateKey="$SSH_PRIVATE_KEY" \
     InstanceType="$INSTANCE_TYPE" \
     VolumeSize="$VOLUME_SIZE" \
     GitRepository="$GIT_REPOSITORY" \
