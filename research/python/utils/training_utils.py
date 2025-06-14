@@ -103,7 +103,7 @@ def load_or_create_dataset(args):
         selfies_encoder = SelfiesEncoder(
             filepath=path_to_dataset,
             backend=args.selfies_backend,
-            n_cores=args.parallel_dataset_cores,
+            n_cores=args.selfies_n_jobs,
             chunk_size=args.parallel_dataset_chunk_size
         )
         data_tensor = selfies_encoder.encoded_samples.float()
@@ -263,7 +263,7 @@ def create_lstm_model(args, selfies):
     print(f"Creating LSTM model with {args.n_lstm_layers} layers...")
     
     return NoisyLSTMv3(
-        vocab_size=selfies.num_emd,
+        vocab_size=selfies.vocab_size,
         seq_len=selfies.max_length,
         sos_token_index=selfies.start_char_index,
         prior_sample_dim=args.num_qubits,

@@ -73,14 +73,25 @@ class SelfiesEncoder:
         self,
         filepath: str,
         backend: str = 'auto',
-        n_cores: int = None,
+        n_cores: int = -1,
         chunk_size: int = 10000,
         max_length: t.Optional[int] = None,
         start_char: str = "[^]",
         pad_char: str = "[nop]",
     ):
         self.filepath = filepath
-        self.n_cores = n_cores or min(mp.cpu_count(), 8)
+        
+        # --- Core count setup ---
+        if n_cores == -1:
+            self.n_cores = mp.cpu_count()
+            print(f"🖥️  Using all available {self.n_cores} cores for SELFIES encoding.")
+        elif n_cores is None: # Fallback for safety
+            self.n_cores = min(mp.cpu_count(), 8)
+            print(f"🖥️  `n_cores` is None, defaulting to {self.n_cores} cores for SELFIES encoding.")
+        else:
+            self.n_cores = max(1, n_cores) # Ensure at least 1 core
+            print(f"🖥️  Using {self.n_cores} specified cores for SELFIES encoding.")
+
         self.chunk_size = chunk_size
         self._max_length_user = max_length
         self._start_char = start_char

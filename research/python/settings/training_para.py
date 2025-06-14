@@ -90,6 +90,11 @@ class TrainingArgs(BaseModel):
         description="SELFIES 인코딩 백엔드 선택 ('auto', 'gpu', 'parallel', 'cpu')"
     )
 
+    selfies_n_jobs: int = Field(
+        default=-1,
+        description="SELFIES 인코딩에 사용할 CPU 코어 수 (-1은 모든 코어 사용)"
+    )
+
     # 데이터 분할 설정
     test_fraction: float = Field(default=0.1, description="테스트 데이터 비율 (기본값: 0.1 = 10%)")
     
