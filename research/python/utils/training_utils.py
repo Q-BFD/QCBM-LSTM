@@ -103,7 +103,7 @@ def load_or_create_dataset(args):
         selfies_encoder = SelfiesEncoder(
             filepath=path_to_dataset,
             backend=args.selfies_backend,
-            n_cores=args.parallel_dataset_cores,
+            n_cores=args.selfies_n_jobs,
             chunk_size=args.parallel_dataset_chunk_size
         )
         data_tensor = selfies_encoder.encoded_samples.float()
