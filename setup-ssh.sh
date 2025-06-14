@@ -74,6 +74,16 @@ if [ "$SSH_KEY_PROVIDED" = false ]; then
     exit 1
 fi
 
+# --- Argument parsing for user-friendly output ---
+PROJECT_NAME_FOR_OUTPUT=""
+for arg in "$@"; do
+    if [[ "$arg" != -* ]]; then
+        PROJECT_NAME_FOR_OUTPUT="$arg"
+        break
+    fi
+done
+# --- End of parsing ---
+
 echo "🚀 Starting SSH configuration..."
 echo "📁 Using infrastructure scripts from: ./.infra/"
 echo ""
@@ -88,12 +98,14 @@ cd ..
 if [ $SETUP_EXIT_CODE -eq 0 ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🎉 SSH configuration completed successfully!"
+    echo "🎉 SSH configuration for EC2 instance completed successfully!"
     echo ""
-    echo "🚀 You can now connect using:"
-    echo "   ssh PROJECT_NAME-container"
+    echo "🚀 You can now connect to the EC2 instance using:"
+    echo "   ssh ${PROJECT_NAME_FOR_OUTPUT}"
     echo ""
-    echo "💡 If connection fails, wait a few more minutes for container setup to complete."
+    echo "💡 The Docker container is still setting up in the background."
+    echo "   After a few minutes, connect to the container using:"
+    echo "   ssh ${PROJECT_NAME_FOR_OUTPUT}-container"
 else
     echo ""
     echo "❌ SSH setup failed! Check the error messages above."
