@@ -1,7 +1,13 @@
-# 표준 library
+"""
+This module provides a flexible and efficient way to calculate rewards for molecules
+based on various filtering strategies. It supports multiple reward calculation methods
+and can run them in parallel for high performance.
+"""
 import logging
 import time
 import os, sys
+import multiprocessing as mp
+from functools import partial
 
 import requests # HTTP 요청 및 응답 처리
 import sqlite3  # 데이터베이스 연결 및 쿼리 실행
@@ -19,6 +25,7 @@ from rdkit import Chem, DataStructs
 
 import rdkit.Chem as rdc
 import rdkit.Chem.Descriptors as rdcd
+from rdkit.Chem import Descriptors, AllChem, rdMolDescriptors
 
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import ExactMolWt
@@ -686,6 +693,187 @@ def reward_fc(smiles_ls, max_mol_weight: float = 800, filter_fc=legacy_apply_fil
         except:
             rewards.append(0)  # 오류가 있으면 보상 0
 
+    return torch.Tensor(rewards)
+
+
+# --- File-level Filter Initialization ---
+# This is done once when the module is imported to avoid repeated file I/O
+_filters_initialized = False
+_pains_filters = []
+_mcf_wehi_filters = []
+
+def _initialize_filters():
+    """Initializes PAINS and MCF/WEHI filters from files. This is a private function."""
+    global _filters_initialized, _pains_filters, _mcf_wehi_filters, _research_root
+    if _filters_initialized:
+        return
+
+    try:
+        _research_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # PAINS filters
+        pains_path = os.path.join(_research_root, "data/valid-filter/pains.txt")
+        with open(pains_path, "r") as f:
+            pains_smarts = [line.split(" ")[0] for line in f if line.strip()]
+        _pains_filters = [Chem.MolFromSmarts(smarts) for smarts in pains_smarts if smarts]
+
+        # MCF/WEHI filters
+        mcf_path = os.path.join(_research_root, 'data/valid-filter/mcf.csv')
+        wehi_path = os.path.join(_research_root, 'data/valid-filter/wehi_pains.csv')
+        mcf_df = pd.read_csv(mcf_path)
+        wehi_df = pd.read_csv(wehi_path, names=['smarts', 'names'])
+        combined_df = pd.concat([mcf_df, wehi_df], ignore_index=True)
+        mcf_wehi_smarts = combined_df['smarts'].values
+        _mcf_wehi_filters = [Chem.MolFromSmarts(smarts) for smarts in mcf_wehi_smarts if smarts]
+        
+        _filters_initialized = True
+        print("✅ PAINS and MCF/WEHI filters initialized successfully.")
+    except FileNotFoundError as e:
+        print(f"⚠️  Filter file not found: {e}. Some filter functionalities will be disabled.")
+    except Exception as e:
+        print(f"⚠️  An error occurred during filter initialization: {e}")
+
+# --- Individual Reward Components (Building Blocks) ---
+
+def _check_legacy_filters(mol, smi, max_mol_weight):
+    # This is a simplified version of the original legacy_apply_filters
+    if any(sub in smi for sub in ["C-", "N+", "C+", "S+", "S-", "O+"]):
+        return 0
+    if Descriptors.GetFormalCharge(mol) != 0:
+        return 0
+    if Descriptors.NumRadicalElectrons(mol) != 0:
+        return 0
+    if Descriptors.CalcNumBridgeheadAtoms(mol) > 2:
+        return 0
+    # Ring size and other checks can be added here if needed
+    return 15
+
+def _check_pains(mol):
+    return 0 if any(mol.HasSubstructMatch(p) for p in _pains_filters) else 5
+
+def _check_mcf_wehi(mol):
+    h_mol = Chem.AddHs(mol)
+    return 0 if any(h_mol.HasSubstructMatch(f) for f in _mcf_wehi_filters) else 5
+
+def _check_sa_score(mol):
+    if sascorer:
+        return 30 if sascorer.calculateScore(mol) < 4 else 0
+    return 0 # Return 0 if sascorer is not available
+
+def _check_molecular_weight(mol, max_mol_weight, min_mol_weight=300):
+    mol_weight = Descriptors.ExactMolWt(mol)
+    return 10 if min_mol_weight <= mol_weight <= max_mol_weight else 0
+
+def _check_logp(mol, min_logp=-2, max_logp=5):
+    logp = Descriptors.MolLogP(mol)
+    return 10 if min_logp <= logp <= max_logp else 0
+    
+def _check_rotatable_bonds(mol, max_bonds=10):
+    return 10 if Descriptors.NumRotatableBonds(mol) < max_bonds else 0
+
+def _check_h_bonds(mol, max_hbd=5, max_hba=10):
+    hbd = Descriptors.NumHDonors(mol)
+    hba = Descriptors.NumHAcceptors(mol)
+    return 10 if hbd <= max_hbd and hba <= max_hba else 0
+
+def _check_atom_count(mol, min_atoms=5, max_atoms=50):
+    return 20 if min_atoms <= mol.GetNumAtoms() <= max_atoms else 0
+
+# --- Reward Calculation Strategies ---
+
+def _calculate_reward_original(smiles, max_mol_weight=800):
+    """Calculates reward based on a comprehensive set of medicinal chemistry filters."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return 0
+    
+    reward = 1.0
+    reward += _check_legacy_filters(mol, smiles, max_mol_weight)
+    reward += _check_pains(mol)
+    reward += _check_mcf_wehi(mol)
+    reward += _check_sa_score(mol)
+    return reward
+
+def _calculate_reward_fast(smiles, max_mol_weight=800):
+    """Calculates reward based on fast-to-compute physicochemical properties."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return 0
+
+    reward = 1.0 + 5 # Base validity reward
+    reward += _check_molecular_weight(mol, max_mol_weight)
+    reward += _check_logp(mol)
+    reward += _check_rotatable_bonds(mol)
+    reward += _check_h_bonds(mol)
+    return reward
+
+def _calculate_reward_minimal(smiles, max_mol_weight=800):
+    """Calculates reward based on the absolute minimum set of filters for speed."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return 0
+        
+    reward = 1.0 + 10 # Base validity reward
+    reward += 20 if Descriptors.ExactMolWt(mol) <= max_mol_weight else 0 # Simplified weight check
+    reward += _check_atom_count(mol)
+    return reward
+
+# --- Main Interface Function (Parallel Calculator) ---
+
+def calculate_rewards(smiles_ls, 
+                      reward_strategy: str = 'original', 
+                      max_mol_weight: float = 800,
+                      n_cores: int = None,
+                      chunk_size: int = 2000):
+    """
+    Calculates reward scores for a list of SMILES strings in parallel using a specified strategy.
+
+    Args:
+        smiles_ls (list): A list of SMILES strings.
+        reward_strategy (str): The reward strategy to use. 
+                               Choose from 'original', 'fast', or 'minimal'.
+                               Defaults to 'original'.
+        max_mol_weight (float): The maximum molecular weight for filtering.
+        n_cores (int): Number of CPU cores to use. Defaults to a max of 8.
+        chunk_size (int): The number of SMILES to process in each parallel chunk.
+
+    Returns:
+        torch.Tensor: A tensor containing the reward score for each SMILES string.
+    """
+    _initialize_filters() # Ensure filters are loaded before parallel execution
+
+    reward_functions = {
+        'original': _calculate_reward_original,
+        'fast': _calculate_reward_fast,
+        'minimal': _calculate_reward_minimal,
+    }
+    
+    if reward_strategy not in reward_functions:
+        raise ValueError(f"Invalid reward_strategy. Choose from {list(reward_functions.keys())}")
+        
+    single_reward_func = partial(reward_functions[reward_strategy], max_mol_weight=max_mol_weight)
+
+    if n_cores is None:
+        n_cores = min(mp.cpu_count(), 8)
+    
+    total_molecules = len(smiles_ls)
+    effective_chunk_size = min(chunk_size, (total_molecules // n_cores) + 1)
+    if effective_chunk_size == 0: effective_chunk_size = 1
+
+    print(f"🚀 Calculating rewards for {total_molecules} molecules...")
+    print(f"   Strategy: {reward_strategy}, Cores: {n_cores}, Chunk Size: {effective_chunk_size}")
+
+    start_time = time.time()
+    
+    with mp.Pool(n_cores) as pool:
+        # pool.map is generally efficient for this kind of task.
+        rewards = pool.map(single_reward_func, smiles_ls, chunksize=effective_chunk_size)
+    
+    elapsed_time = time.time() - start_time
+    molecules_per_sec = total_molecules / elapsed_time if elapsed_time > 0 else 0
+    
+    print(f"✅ Reward calculation complete in {elapsed_time:.2f}s ({molecules_per_sec:.0f} molecules/sec)")
+    
     return torch.Tensor(rewards)
 
 

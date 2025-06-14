@@ -18,7 +18,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.training_utils import (
-    setup_environment, parse_arguments, create_experiment_directories,
+    setup_environment, parse_arguments,
     load_or_create_dataset, create_dataloader, setup_filter_functions,
     create_prior_model, create_lstm_model, print_epoch_summary,
     create_train_test_dataloaders
@@ -29,6 +29,7 @@ from utils.saving_utils import (
 from utils.wandb_utils import (
     init_wandb, log_epoch_metrics, log_molecules_to_wandb, log_qcbm_distribution, finish_wandb
 )
+from utils.experiment_manager import ExperimentManager
 
 # Import custom modules
 from utils.filters import get_diversity, legacy_apply_filters, combine_filter
@@ -44,9 +45,11 @@ def main():
     setup_environment()
     args = parse_arguments()
     
-    # Create organized directory structure
-    dirs = create_experiment_directories(args)
-    print(f"[Info] Results will be saved to: {dirs['base']}")
+    # Setup experiment environment using the manager
+    manager = ExperimentManager(args)
+    dirs = manager.get_directories()
+    
+    print(f"[Info] 모든 결과는 다음 디렉토리에 저장됩니다: {dirs['base']}")
     
     # Initialize WandB monitoring
     wandb_run = init_wandb(args)

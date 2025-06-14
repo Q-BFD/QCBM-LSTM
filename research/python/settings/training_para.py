@@ -2,6 +2,12 @@ from typing import Literal
 import os
 import json
 from pydantic import BaseModel, Field
+import socket
+
+# 스크립트 위치를 기준으로 research 폴더의 절대 경로를 찾습니다.
+# training_para.py -> settings -> python -> research
+RESEARCH_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_OUTPUT_ROOT = os.path.join(RESEARCH_ROOT, "outputs")
 
 
 class TrainingArgs(BaseModel):
@@ -67,12 +73,17 @@ class TrainingArgs(BaseModel):
     parallel_dataset_chunk_size: int = Field(default=10000, description="데이터셋 병렬처리 청크 크기")
 
     # 실험 저장 경로
-    experiment_root:str = Field(default="./outputs", description="실험 루트")
+    experiment_root:str = Field(default=DEFAULT_OUTPUT_ROOT, description="실험 루트")
     n_benchmark_samples:int = Field(default=100_000, description="벤치마크 샘플 수")
-    plot_root:str = Field(default="./outputs/plots", description="그래프 저장 경로")
     
     max_mol_weight:int = Field(default=800)
     
+    # 보상 계산 전략
+    reward_strategy: Literal['original', 'fast', 'minimal'] = Field(
+        default='original',
+        description="보상 계산 전략 선택 ('original', 'fast', 'minimal')"
+    )
+
     # 데이터 분할 설정
     test_fraction: float = Field(default=0.1, description="테스트 데이터 비율 (기본값: 0.1 = 10%)")
     
@@ -81,63 +92,6 @@ class TrainingArgs(BaseModel):
     wandb_project: str = Field(default="kras-drug-discovery", description="WandB 프로젝트 이름")
     wandb_entity: str = Field(default=None, description="WandB 팀/사용자 이름 (선택사항)")
     experiment_name: str = Field(default=None, description="실험 이름 (미지정시 자동 생성)")
-
-
-    def create_experiment_dir(self) -> None:
-        """
-        실험 결과 디렉토리를 생성하고 기본 정보를 저장
-        실험 이름별로 별도 서브디렉토리 생성
-        """
-        import datetime
-        import hashlib
-        import getpass
-        
-        # 실험 이름 자동 생성 (없는 경우)
-        if not self.experiment_name or self.experiment_name.strip() == "":
-            # 사용자 이름 가져오기
-            try:
-                username = getpass.getuser()
-            except:
-                username = "user"
-            
-            # 현재 시간 기반 6자리 hash 생성
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            hash_input = f"{username}_{timestamp}_{self.prior_model}_{self.temprature}_{self.batch_size}"
-            hash_6digit = hashlib.md5(hash_input.encode()).hexdigest()[:6]
-            
-            self.experiment_name = f"{username}_{hash_6digit}_{self.prior_model}"
-            print(f"🔧 실험 이름 자동 생성: {self.experiment_name}")
-        
-        # 실험별 서브디렉토리 경로 생성
-        experiment_dir = os.path.join(self.experiment_root, self.experiment_name)
-        
-        # 실험 디렉토리 생성
-        os.makedirs(experiment_dir, exist_ok=True)
-        
-        # experiment_root를 실험별 디렉토리로 업데이트
-        self.experiment_root = experiment_dir
-        
-        # plot_root도 실험별로 업데이트
-        self.plot_root = os.path.join(experiment_dir, "plots")
-        
-        # 실험 시작 시간 및 설정 정보 기록
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        info_file = os.path.join(experiment_dir, "experiment_info.txt")
-        
-        with open(info_file, "w") as f:
-            f.write(f"Experiment started: {timestamp}\n")
-            f.write(f"Experiment name: {self.experiment_name}\n")
-            f.write(f"Prior model: {self.prior_model}\n")
-            f.write(f"Temperature: {self.temprature}\n")
-            f.write(f"Batch size: {self.batch_size}\n")
-            f.write(f"LSTM epochs: {self.lstm_n_epochs}\n")
-            f.write(f"Device: {self.device}\n")
-            f.write(f"Output directory: {experiment_dir}\n")
-        
-        print(f"✅ 실험별 디렉토리 생성: {experiment_dir}")
-        print(f"📝 실험 정보 저장: experiment_info.txt")
-        print(f"📁 서브폴더는 필요할 때 자동 생성됩니다")
-
 
     # @classmethod : 클래스 메서드는 클래스 자체에 속한 메서드
     @classmethod

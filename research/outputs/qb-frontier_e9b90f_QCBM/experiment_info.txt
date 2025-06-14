@@ -1,0 +1,8 @@
+Experiment started: 20250614_200301
+Experiment name: qb-frontier_e9b90f_QCBM
+Prior model: QCBM
+Temperature: 0.5
+Batch size: 128
+LSTM epochs: 100
+Device: auto
+Output directory: /home/qb-frontier/QCBM-LSTM/research/outputs/qb-frontier_e9b90f_QCBM

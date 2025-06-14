@@ -1,8 +1,0 @@
-Experiment started: 20250614_172058
-Experiment name: qcbm_lstm_minimal_test
-Prior model: QCBM
-Temperature: 0.7
-Batch size: 32
-LSTM epochs: 1
-Device: auto
-Output directory: ./outputs/minimal_test/qcbm_lstm_minimal_test

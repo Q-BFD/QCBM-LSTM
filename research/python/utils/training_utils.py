@@ -20,9 +20,7 @@ sys.path.append(research_root)
 # Import from the same utils package
 from .selfies_encoding import SelfiesEncoding
 from .selfies_encoding_parallel import ParallelSelfiesEncoding, create_parallel_dataset
-from .filters import legacy_apply_filters, combine_filter, reward_fc
-from .filters_fast import fast_reward_fc, minimal_reward_fc
-from .filters_parallel import reward_fc_optimized
+from .filters import legacy_apply_filters, combine_filter, calculate_rewards
 from .dataloader import new_data_loader, save_obj, load_obj
 
 # Import from other modules
@@ -69,25 +67,6 @@ def parse_arguments():
         args = TrainingArgs(prior_model="QCBM")  # prior_model is the only required field
     
     return args
-
-
-def create_experiment_directories(args):
-    """Create experiment directory and return paths for result storage."""
-    # Create main experiment directory and info file
-    args.create_experiment_dir()
-    
-    base_dir = Path(args.experiment_root)
-    
-    # Return only the directories that are actually used
-    # Subdirectories will be created automatically when files are saved
-    return {
-        'base': base_dir,
-        'checkpoints': base_dir / "checkpoints",     # 모델 체크포인트
-        'samples': base_dir / "samples",             # 생성된 분자 샘플  
-        'plots': base_dir / "plots",                 # 분자 이미지, 그래프
-        'logs': base_dir / "logs",                   # 실험 로그
-        'stats': base_dir / "stats"                  # 통계 데이터
-    }
 
 
 # =============================================================================
@@ -260,34 +239,14 @@ def setup_filter_functions(args):
         disable_tqdm=True
     )
     
-    # 병렬처리 vs 일반 처리 선택
-    if hasattr(args, 'use_parallel_reward') and args.use_parallel_reward:
-        print(f"🚀 Using parallel reward computation:")
-        print(f"   Cores: {args.parallel_n_cores}")
-        print(f"   Chunk size: {args.parallel_chunk_size}")
-        print(f"   Expected speedup: ~10x faster")
-        
-        rew_fc = partial(
-            reward_fc_optimized,
-            max_mol_weight=args.max_mol_weight,
-            chunk_size=args.parallel_chunk_size,
-            n_cores=args.parallel_n_cores
-        )
-    else:
-        # 빠른 reward 함수 선택 (기존 로직)
-        if hasattr(args, 'fast_reward') and args.fast_reward == 'minimal':
-            print("🚀 Using minimal reward function (865x faster)")
-            rew_fc = partial(minimal_reward_fc, max_mol_weight=args.max_mol_weight)
-        elif hasattr(args, 'fast_reward') and args.fast_reward == 'fast':
-            print("🚀 Using fast reward function (83x faster)")
-            rew_fc = partial(fast_reward_fc, max_mol_weight=args.max_mol_weight)
-        else:
-            print("📊 Using original reward function (full accuracy)")
-            rew_fc = partial(
-                reward_fc,
-                max_mol_weight=args.max_mol_weight,
-                filter_fc=legacy_apply_filters
-            )
+    # 새로운 통합 보상 함수를 사용하도록 수정
+    rew_fc = partial(
+        calculate_rewards,
+        reward_strategy=args.reward_strategy,
+        max_mol_weight=args.max_mol_weight,
+        n_cores=args.parallel_n_cores,
+        chunk_size=args.parallel_chunk_size
+    )
     
     return validity_fn, rew_fc
 
