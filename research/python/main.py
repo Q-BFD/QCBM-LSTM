@@ -26,7 +26,7 @@ from utils.saving_utils import (
     save_epoch_results, save_generation_samples, save_training_summary
 )
 from utils.wandb_utils import (
-    init_wandb, log_epoch_metrics, log_molecules_to_wandb, finish_wandb
+    init_wandb, log_epoch_metrics, log_molecules_to_wandb, log_qcbm_distribution, finish_wandb
 )
 
 # Import custom modules
@@ -167,6 +167,9 @@ def main():
         print("[Step 5/6] Generating compounds after prior training...")
         prior_samples_current, _, _ = prior.generate(args.n_test_samples, sampler=None, backend=None)
         encoded_compounds = model.generate(prior_samples_current)
+        
+        # Log QCBM distribution to WandB
+        log_qcbm_distribution(epoch, prior_samples_current, dirs['plots'], num_histogram_samples=1000)
         
         # Final evaluation with verbose output
         validity_fn_verbose = partial(
