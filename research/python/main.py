@@ -67,7 +67,7 @@ def main():
     # Setup functions and models
     validity_fn, rew_fc = setup_filter_functions(args)
     diversity_fn = get_diversity
-    decoder_fn = selfies.decode_fn
+    decoder_fn = selfies.decode
     
     print(f"\n========== Models Configuration ==========")
     
