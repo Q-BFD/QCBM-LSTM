@@ -64,37 +64,61 @@ class TrainingArgs(BaseModel):
     use_wandb: bool = Field(default=True, description="WandB 사용 여부")
     wandb_project: str = Field(default="kras-drug-discovery", description="WandB 프로젝트 이름")
     wandb_entity: str = Field(default=None, description="WandB 팀/사용자 이름 (선택사항)")
-    experiment_name: str = Field(default=None, description="실험 이름 (자동 생성시 None)")
+    experiment_name: str = Field(default=None, description="실험 이름 (미지정시 자동 생성)")
 
 
     def create_experiment_dir(self) -> None:
         """
         실험 결과 디렉토리를 생성하고 기본 정보를 저장
-        (실제 필요한 서브디렉토리는 파일 저장 시점에 생성)
+        실험 이름별로 별도 서브디렉토리 생성
         """
         import datetime
+        import hashlib
+        import getpass
         
-        # 메인 실험 디렉토리만 생성
-        os.makedirs(self.experiment_root, exist_ok=True)
+        # 실험 이름 자동 생성 (없는 경우)
+        if not self.experiment_name or self.experiment_name.strip() == "":
+            # 사용자 이름 가져오기
+            try:
+                username = getpass.getuser()
+            except:
+                username = "user"
+            
+            # 현재 시간 기반 6자리 hash 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            hash_input = f"{username}_{timestamp}_{self.prior_model}_{self.temprature}_{self.batch_size}"
+            hash_6digit = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+            
+            self.experiment_name = f"{username}_{hash_6digit}_{self.prior_model}"
+            print(f"🔧 실험 이름 자동 생성: {self.experiment_name}")
         
-        # plot_root 디렉토리도 생성 (별도 경로인 경우)
-        if self.plot_root != os.path.join(self.experiment_root, "plots"):
-            os.makedirs(self.plot_root, exist_ok=True)
+        # 실험별 서브디렉토리 경로 생성
+        experiment_dir = os.path.join(self.experiment_root, self.experiment_name)
+        
+        # 실험 디렉토리 생성
+        os.makedirs(experiment_dir, exist_ok=True)
+        
+        # experiment_root를 실험별 디렉토리로 업데이트
+        self.experiment_root = experiment_dir
+        
+        # plot_root도 실험별로 업데이트
+        self.plot_root = os.path.join(experiment_dir, "plots")
         
         # 실험 시작 시간 및 설정 정보 기록
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        info_file = os.path.join(self.experiment_root, "experiment_info.txt")
+        info_file = os.path.join(experiment_dir, "experiment_info.txt")
         
         with open(info_file, "w") as f:
             f.write(f"Experiment started: {timestamp}\n")
+            f.write(f"Experiment name: {self.experiment_name}\n")
             f.write(f"Prior model: {self.prior_model}\n")
             f.write(f"Temperature: {self.temprature}\n")
             f.write(f"Batch size: {self.batch_size}\n")
             f.write(f"LSTM epochs: {self.lstm_n_epochs}\n")
             f.write(f"Device: {self.device}\n")
-            f.write(f"Output directory: {self.experiment_root}\n")
+            f.write(f"Output directory: {experiment_dir}\n")
         
-        print(f"✅ 실험 디렉토리 생성: {self.experiment_root}")
+        print(f"✅ 실험별 디렉토리 생성: {experiment_dir}")
         print(f"📝 실험 정보 저장: experiment_info.txt")
         print(f"📁 서브폴더는 필요할 때 자동 생성됩니다")
 
