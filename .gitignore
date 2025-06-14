@@ -118,4 +118,8 @@ wheels/
 *.tmp
 *~
 tmp/
-temp/ 
+temp/
+
+# Ignore experiment results and logs
+research/outputs/
+research/wandb/ 
