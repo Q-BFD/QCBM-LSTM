@@ -1,4 +1,4 @@
-Experiment started: 20250614_023638
+Experiment started: 20250614_121920
 Prior model: QCBM
 Temperature: 0.5
 Batch size: 128

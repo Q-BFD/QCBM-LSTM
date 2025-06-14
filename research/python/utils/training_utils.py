@@ -20,6 +20,8 @@ sys.path.append(research_root)
 # Import from the same utils package
 from .selfies_encoding import SelfiesEncoding
 from .filters import legacy_apply_filters, combine_filter, reward_fc
+from .filters_fast import fast_reward_fc, minimal_reward_fc
+from .filters_parallel import reward_fc_optimized
 from .dataloader import new_data_loader, save_obj, load_obj
 
 # Import from other modules
@@ -160,11 +162,34 @@ def setup_filter_functions(args):
         disable_tqdm=True
     )
     
-    rew_fc = partial(
-        reward_fc,
-        max_mol_weight=args.max_mol_weight,
-        filter_fc=legacy_apply_filters
-    )
+    # 병렬처리 vs 일반 처리 선택
+    if hasattr(args, 'use_parallel_reward') and args.use_parallel_reward:
+        print(f"🚀 Using parallel reward computation:")
+        print(f"   Cores: {args.parallel_n_cores}")
+        print(f"   Chunk size: {args.parallel_chunk_size}")
+        print(f"   Expected speedup: ~10x faster")
+        
+        rew_fc = partial(
+            reward_fc_optimized,
+            max_mol_weight=args.max_mol_weight,
+            chunk_size=args.parallel_chunk_size,
+            n_cores=args.parallel_n_cores
+        )
+    else:
+        # 빠른 reward 함수 선택 (기존 로직)
+        if hasattr(args, 'fast_reward') and args.fast_reward == 'minimal':
+            print("🚀 Using minimal reward function (865x faster)")
+            rew_fc = partial(minimal_reward_fc, max_mol_weight=args.max_mol_weight)
+        elif hasattr(args, 'fast_reward') and args.fast_reward == 'fast':
+            print("🚀 Using fast reward function (83x faster)")
+            rew_fc = partial(fast_reward_fc, max_mol_weight=args.max_mol_weight)
+        else:
+            print("📊 Using original reward function (full accuracy)")
+            rew_fc = partial(
+                reward_fc,
+                max_mol_weight=args.max_mol_weight,
+                filter_fc=legacy_apply_filters
+            )
     
     return validity_fn, rew_fc
 
