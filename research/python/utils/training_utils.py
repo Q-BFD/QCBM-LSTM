@@ -4,162 +4,29 @@ This module contains helper functions for data processing, model creation, and r
 """
 
 import os
-import time
 from pathlib import Path
 from argparse import ArgumentParser
 from functools import partial
 
-import pandas as pd
-import numpy as np
 import torch
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-from rdkit.Chem import Draw
-from rdkit import Chem, RDLogger
+from rdkit import RDLogger
 
 # Import custom modules
 import sys
-import os
 # Add the research directory to sys.path for absolute imports
 research_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(research_root)
 
 # Import from the same utils package
-from .selfies_encoding import SelfiesEncoding, truncate_smiles
-from .filters import get_diversity, legacy_apply_filters, combine_filter, reward_fc
+from .selfies_encoding import SelfiesEncoding
+from .filters import legacy_apply_filters, combine_filter, reward_fc
 from .dataloader import new_data_loader, save_obj, load_obj
-from .compound_stat import compute_compound_stats
 
-# Import from other modules  
+# Import from other modules
 from settings.training_para import TrainingArgs
 from model.lstm.noisy_lstm_v3 import NoisyLSTMv3
 from model.prior.prior_cls import RandomChoiceSampler
 from model.prior.prior_qcbm import SingleBasisQCBM, QCBMAnsatz, ScipyOptimizer
-
-# Optional imports for quantum computing
-try:
-    from qiskit_ibm_runtime import QiskitRuntimeService, Session, Sampler
-    import wandb
-    WANDB_AVAILABLE = True
-except ImportError:
-    WANDB_AVAILABLE = False
-    print("Warning: wandb or qiskit not available. Some features may be disabled.")
-
-
-# =============================================================================
-# WandB Integration Utils
-# =============================================================================
-
-def init_wandb(args):
-    """Initialize Weights & Biases logging."""
-    if not args.use_wandb or not WANDB_AVAILABLE:
-        print("📊 WandB monitoring disabled")
-        return None
-    
-    try:
-        # Generate experiment name if not provided
-        experiment_name = args.experiment_name
-        if experiment_name is None:
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            experiment_name = f"{args.prior_model}_temp{args.temprature}_batch{args.batch_size}_{timestamp}"
-        
-        # Initialize wandb
-        wandb_run = wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=experiment_name,
-            config={
-                "prior_model": args.prior_model,
-                "temperature": args.temprature,
-                "batch_size": args.batch_size,
-                "lstm_epochs": args.lstm_n_epochs,
-                "lstm_layers": args.n_lstm_layers,
-                "hidden_dim": args.hidden_dim,
-                "embedding_dim": args.embedding_dim,
-                "device": args.device,
-                "dataset_id": args.data_set_id,
-                "dataset_fraction": args.data_set_fraction,
-                "prior_epochs": args.prior_n_epochs,
-                "qcbm_layers": args.n_qcbm_layers,
-                "qcbm_shots": args.n_qcbm_shots,
-                "optimizer": args.optimizer_name,
-                "max_mol_weight": args.max_mol_weight
-            },
-            tags=[args.prior_model, f"temp_{args.temprature}", f"batch_{args.batch_size}"]
-        )
-        
-        print(f"🚀 WandB initialized: {wandb_run.name}")
-        print(f"📊 Dashboard: {wandb_run.url}")
-        return wandb_run
-        
-    except Exception as e:
-        print(f"❌ WandB initialization failed: {e}")
-        return None
-
-
-def log_epoch_metrics(epoch, compound_stats, epoch_time, additional_metrics=None):
-    """Log epoch metrics to WandB."""
-    if not WANDB_AVAILABLE or not wandb.run:
-        return
-    
-    try:
-        metrics = {
-            "epoch": epoch,
-            "epoch_time": epoch_time,
-            "compounds/unique_count": compound_stats.n_unique,
-            "compounds/valid_count": compound_stats.n_valid,
-            "compounds/unseen_count": compound_stats.n_unseen,
-            "fractions/unique": compound_stats.unique_fraction,
-            "fractions/valid": compound_stats.valid_fraction,
-            "fractions/diversity": compound_stats.diversity_fraction,
-        }
-        
-        # Add any additional metrics
-        if additional_metrics:
-            metrics.update(additional_metrics)
-        
-        wandb.log(metrics, step=epoch)
-        
-    except Exception as e:
-        print(f"⚠️ WandB logging failed: {e}")
-
-
-def log_molecules_to_wandb(epoch, compound_stats, plots_dir):
-    """Log molecule images to WandB."""
-    if not WANDB_AVAILABLE or not wandb.run:
-        return
-    
-    try:
-        # Log molecule image if it exists
-        molecule_img_path = plots_dir / f"epoch_{epoch}_molecules.png"
-        if molecule_img_path.exists():
-            wandb.log({
-                "molecules/generated_samples": wandb.Image(str(molecule_img_path), 
-                                                         caption=f"Epoch {epoch} - Generated molecules")
-            }, step=epoch)
-        
-        # Log sample SMILES as table
-        if len(compound_stats.valid_compounds) > 0:
-            sample_smiles = list(compound_stats.valid_compounds)[:10]  # Top 10
-            smiles_table = wandb.Table(
-                columns=["SMILES", "Epoch"],
-                data=[[smiles, epoch] for smiles in sample_smiles]
-            )
-            wandb.log({"molecules/sample_smiles": smiles_table}, step=epoch)
-            
-    except Exception as e:
-        print(f"⚠️ WandB molecule logging failed: {e}")
-
-
-def finish_wandb():
-    """Finish WandB run."""
-    if WANDB_AVAILABLE and wandb.run:
-        try:
-            wandb.finish()
-            print("✅ WandB run finished")
-        except Exception as e:
-            print(f"⚠️ WandB finish failed: {e}")
 
 
 # =============================================================================
@@ -344,151 +211,6 @@ def create_lstm_model(args, selfies):
 # =============================================================================
 # Result Saving Utils
 # =============================================================================
-
-def save_epoch_results(epoch, compound_stats, args, prior_samples_current, 
-                      encoded_compounds, selfies, prior, model, prior_x, prior_y, dirs):
-    """Save results for current epoch with improved organization."""
-    rng = np.random.default_rng()
-    
-    # Save molecule images if valid compounds exist
-    try:
-        if len(compound_stats.valid_compounds) > 20:
-            selected_smiles = rng.choice(
-                list(compound_stats.valid_compounds), 20, replace=False
-            )
-        else:
-            selected_smiles = list(compound_stats.valid_compounds)
-        
-        if selected_smiles:
-            # Create plots directory if it doesn't exist
-            dirs['plots'].mkdir(exist_ok=True)
-            
-            mols = [Chem.MolFromSmiles(smile_) for smile_ in selected_smiles]
-            img = Draw.MolsToGridImage(mols, molsPerRow=20, returnPNG=False)
-            img.save(dirs['plots'] / f"epoch_{epoch}_molecules.png")
-            print(f"[Info] Saved molecular images for epoch {epoch}")
-            print(f"[Info] Example valid SMILES: {selected_smiles[:3]}")
-    except Exception as e:
-        print(f"Unable to draw molecules: {e}")
-    
-    # Save model checkpoint with improved naming
-    try:
-        checkpoint_data = {
-            "epoch": epoch,
-            "prior_samples": prior_samples_current,
-            "model_samples": encoded_compounds,
-            "selfies": selfies,
-            "prior": prior,
-            "model": model,
-            "prior_x": prior_x,
-            "prior_y": prior_y,
-            "compound_stats": compound_stats,
-            "timestamp": time.time()
-        }
-        
-        # Create checkpoints directory if it doesn't exist
-        dirs['checkpoints'].mkdir(exist_ok=True)
-        
-        checkpoint_path = dirs['checkpoints'] / f"checkpoint_epoch_{epoch:03d}.pkl"
-        save_obj(checkpoint_data, str(checkpoint_path))
-        print(f"[Info] Saved checkpoint: {checkpoint_path}")
-        
-    except Exception as e:
-        print(f"Unable to save checkpoint for epoch {epoch}: {e}")
-
-
-def save_generation_samples(epoch, compound_stats, dirs):
-    """Save generated samples for each epoch."""
-    try:
-        samples_data = {
-            "epoch": epoch,
-            "all_compounds": list(compound_stats.all_compounds),
-            "unique_compounds": list(compound_stats.unique_compounds), 
-            "valid_compounds": list(compound_stats.valid_compounds),
-            "unseen_compounds": list(compound_stats.unseen_compounds),
-            "statistics": {
-                "n_unique": compound_stats.n_unique,
-                "n_valid": compound_stats.n_valid,
-                "n_unseen": compound_stats.n_unseen,
-                "unique_fraction": compound_stats.unique_fraction,
-                "valid_fraction": compound_stats.valid_fraction,
-                "diversity_fraction": compound_stats.diversity_fraction,
-            }
-        }
-        
-        # Create samples directory if it doesn't exist
-        dirs['samples'].mkdir(exist_ok=True)
-        
-        # Save as CSV for easy analysis
-        df = pd.DataFrame({'smiles': samples_data['all_compounds']})
-        csv_path = dirs['samples'] / f"generated_epoch_{epoch:03d}.csv"
-        df.to_csv(csv_path, index=False)
-        
-        # Save detailed data as pickle
-        pkl_path = dirs['samples'] / f"samples_epoch_{epoch:03d}.pkl"
-        save_obj(samples_data, str(pkl_path))
-        
-        print(f"[Info] Saved generation samples for epoch {epoch}")
-        
-    except Exception as e:
-        print(f"Unable to save generation samples for epoch {epoch}: {e}")
-
-
-def save_training_summary(all_compound_stats, args, dirs):
-    """Save comprehensive training summary."""
-    print("[Step] Saving training summary...")
-    
-    try:
-        # Create summary statistics
-        summary_rows = []
-        for i, stats in enumerate(all_compound_stats, 1):
-            summary_rows.append({
-                "epoch": i,
-                "n_unique": stats.n_unique,
-                "n_valid": stats.n_valid,
-                "n_unseen": stats.n_unseen,
-                "unique_fraction": stats.unique_fraction,
-                "valid_fraction": stats.valid_fraction,
-                "diversity_fraction": stats.diversity_fraction,
-                "valid_smiles_sample": ";".join(list(stats.valid_compounds)[:10])  # First 10 only
-            })
-        
-        summary_df = pd.DataFrame(summary_rows)
-        
-        # Create directories if they don't exist
-        dirs['stats'].mkdir(exist_ok=True)
-        dirs['logs'].mkdir(exist_ok=True)
-        
-        # Save summary CSV
-        summary_path = dirs['stats'] / "training_summary.csv"
-        summary_df.to_csv(summary_path, index=False)
-        
-        # Save detailed statistics as pickle
-        detailed_path = dirs['stats'] / "detailed_compound_stats.pkl"
-        save_obj(all_compound_stats, str(detailed_path))
-        
-        # Create and save training log
-        log_data = {
-            "experiment_config": vars(args),
-            "total_epochs": len(all_compound_stats),
-            "final_stats": {
-                "best_valid_fraction": max(stats.valid_fraction for stats in all_compound_stats),
-                "best_diversity": max(stats.diversity_fraction for stats in all_compound_stats),
-                "best_unique_fraction": max(stats.unique_fraction for stats in all_compound_stats),
-            },
-            "timestamp": time.time()
-        }
-        
-        log_path = dirs['logs'] / "experiment_log.pkl"
-        save_obj(log_data, str(log_path))
-        
-        print(f"[Success] Training summary saved to {summary_path}")
-        print(f"[Success] Detailed statistics saved to {detailed_path}")
-        print(f"[Success] Experiment log saved to {log_path}")
-        
-    except Exception as e:
-        print(f"Error saving training summary: {e}")
-
 
 def print_epoch_summary(epoch, compound_stats, epoch_time):
     """Print formatted epoch summary."""

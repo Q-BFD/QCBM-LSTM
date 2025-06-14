@@ -1,0 +1,7 @@
+Experiment started: 20250614_023638
+Prior model: QCBM
+Temperature: 0.5
+Batch size: 128
+LSTM epochs: 100
+Device: auto
+Output directory: ./outputs

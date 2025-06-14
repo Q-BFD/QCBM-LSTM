@@ -7,6 +7,9 @@ import time
 import torch
 from functools import partial
 from tqdm import tqdm
+import cProfile
+import pstats
+import io
 
 # Import utility functions
 import sys
@@ -17,12 +20,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.training_utils import (
     setup_environment, parse_arguments, create_experiment_directories,
     load_or_create_dataset, create_dataloader, setup_filter_functions,
-    create_prior_model, create_lstm_model, save_epoch_results,
-    save_generation_samples, save_training_summary, print_epoch_summary,
+    create_prior_model, create_lstm_model, print_epoch_summary
+)
+from utils.saving_utils import (
+    save_epoch_results, save_generation_samples, save_training_summary
+)
+from utils.wandb_utils import (
     init_wandb, log_epoch_metrics, log_molecules_to_wandb, finish_wandb
 )
 
-# Import custom modules  
+# Import custom modules
 from utils.filters import get_diversity, legacy_apply_filters, combine_filter
 from utils.compound_stat import compute_compound_stats
 
@@ -230,7 +237,6 @@ def main():
     print(f"  Diversity: {best_stats.diversity_fraction:.4f}")
     print(f"  Unique fraction: {best_stats.unique_fraction:.4f}")
     print(f"  Total valid compounds: {best_stats.n_valid:,}")
-    
     print(f"\nAll results saved to: {dirs['base']}")
     print("Training completed successfully! 🎉")
     
@@ -239,5 +245,21 @@ def main():
 
 
 if __name__ == "__main__":
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     main()
+
+    profiler.disable()
+
+    s = io.StringIO()
+    sortby = pstats.SortKey.CUMULATIVE
+    ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    
+    print("\n" + "="*80)
+    print("PERFORMANCE PROFILE (TOP 20 CUMULATIVE TIME)")
+    print("="*80)
+    ps.print_stats(20)
+    print(s.getvalue())
+    print("="*80)
     
