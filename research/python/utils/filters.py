@@ -17,7 +17,7 @@ from rdkit.Chem import rdFingerprintGenerator
 
 # --- Configuration for SA_Score ---
 try:
-    from rdkit.Contrib import SA_Score as sascorer
+    from rdkit.Contrib.SA_Score import sascorer
 except ImportError:
     try:
         from rdkit import RDConfig
@@ -143,7 +143,10 @@ def _check_mcf_wehi(mol):
     return 0 if any(h_mol.HasSubstructMatch(f) for f in _mcf_wehi_filters) else 5
 
 def _check_sa_score(mol):
-    return 30 if sascorer and sascorer.calculateScore(mol) < 4 else 0
+    if not sascorer:
+        return 0
+    # The imported object is the module, and the function is on it.
+    return 30 if sascorer.calculateScore(mol) < 4 else 0
 
 def _check_molecular_weight(mol, max_mol_weight, min_mol_weight=300):
     mol_weight = Descriptors.ExactMolWt(mol)
