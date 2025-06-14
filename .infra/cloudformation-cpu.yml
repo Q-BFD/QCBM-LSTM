@@ -92,76 +92,7 @@ Parameters:
     AllowedPattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
     ConstraintDescription: Must be a valid email address
 
-  # CPU 기반 자동 종료 설정
-  CPUThreshold:
-    Type: Number
-    Default: 10
-    MinValue: 1
-    MaxValue: 50
-    Description: CPU 사용률 임계치 (% 미만시 종료 프로세스 시작)
-
-  IdlePeriodMinutes:
-    Type: Number
-    Default: 30
-    MinValue: 10
-    MaxValue: 180
-    Description: 낮은 CPU 사용률 지속 시간 (분)
-
-  MaxRuntimeHours:
-    Type: Number
-    Default: 8
-    MinValue: 1
-    MaxValue: 24
-    Description: 최대 실행 시간 (시간) - 절대 종료 시간
-
-  EnableAutoShutdown:
-    Type: String
-    Default: 'true'
-    AllowedValues: ['true', 'false']
-    Description: CPU 기반 자동 종료 활성화 여부
-
-Conditions:
-  AutoShutdownEnabled: !Equals [!Ref EnableAutoShutdown, 'true']
-
 Resources:
-  # IAM 역할 (자동 종료용)
-  EC2AutoShutdownRole:
-    Type: AWS::IAM::Role
-    Condition: AutoShutdownEnabled
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
-      Policies:
-        - PolicyName: AutoShutdownPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:StopInstances
-                  - ec2:DescribeInstances
-                  - cloudwatch:PutMetricData
-                Resource: '*'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-AutoShutdownRole'
-        - Key: Project
-          Value: !Ref ProjectName
-
-  EC2InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Condition: AutoShutdownEnabled
-    Properties:
-      Roles:
-        - !Ref EC2AutoShutdownRole
-
   ProjectSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -196,10 +127,6 @@ Resources:
       ImageId: ami-0c9c942bd7bf113a2
       SecurityGroupIds:
         - !Ref ProjectSecurityGroup
-      IamInstanceProfile: !If
-        - AutoShutdownEnabled
-        - !Ref EC2InstanceProfile
-        - !Ref AWS::NoValue
       BlockDeviceMappings:
         - DeviceName: /dev/sdf
           Ebs:
@@ -211,8 +138,6 @@ Resources:
           Value: !Sub '${ProjectName}-DevInstance-CPU'
         - Key: Project
           Value: !Ref ProjectName
-        - Key: AutoShutdown
-          Value: !Ref EnableAutoShutdown
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -267,139 +192,6 @@ Resources:
             --git-user-name "${GitUserName}" \
             --git-user-email "${GitUserEmail}"
 
-          # ===============================
-          # CPU 기반 자동 종료 설정
-          # ===============================
-          if [ "${EnableAutoShutdown}" = "true" ]; then
-            echo "Setting up CPU-based auto shutdown..."
-            
-            # Python 패키지 설치
-            apt-get update -y
-            apt-get install -y python3-pip at
-            pip3 install boto3 psutil
-            
-            # CPU 모니터링 스크립트 생성
-            cat > /home/ubuntu/cpu_monitor.py << 'EOF'
-          #!/usr/bin/env python3
-          import psutil
-          import boto3
-          import time
-          import sys
-          import logging
-          from datetime import datetime
-          import urllib.request
-
-          # 로깅 설정
-          logging.basicConfig(
-              level=logging.INFO,
-              format='%(asctime)s - %(levelname)s - %(message)s',
-              handlers=[
-                  logging.FileHandler('/var/log/cpu_monitor.log'),
-                  logging.StreamHandler()
-              ]
-          )
-
-          class CPUMonitor:
-              def __init__(self, threshold=${CPUThreshold}, idle_minutes=${IdlePeriodMinutes}):
-                  self.threshold = threshold
-                  self.idle_minutes = idle_minutes
-                  self.check_interval = 60  # 1분마다 체크
-                  self.idle_count = 0
-                  self.max_idle_checks = idle_minutes
-                  
-                  # AWS 클라이언트
-                  self.ec2 = boto3.client('ec2')
-                  self.instance_id = self.get_instance_id()
-                  
-              def get_instance_id(self):
-                  try:
-                      response = urllib.request.urlopen('http://169.254.169.254/latest/meta-data/instance-id')
-                      return response.read().decode('utf-8')
-                  except Exception as e:
-                      logging.error(f"인스턴스 ID 조회 실패: {e}")
-                      return None
-
-              def get_cpu_usage(self):
-                  return psutil.cpu_percent(interval=1)
-
-              def shutdown_instance(self):
-                  if self.instance_id:
-                      try:
-                          logging.info(f"인스턴스 {self.instance_id} 종료 시작...")
-                          self.ec2.stop_instances(InstanceIds=[self.instance_id])
-                          logging.info("종료 명령 전송 완료")
-                      except Exception as e:
-                          logging.error(f"인스턴스 종료 실패: {e}")
-
-              def monitor(self):
-                  logging.info(f"CPU 모니터링 시작 - 임계치: {self.threshold}%, 대기시간: {self.idle_minutes}분")
-                  
-                  while True:
-                      try:
-                          cpu_usage = self.get_cpu_usage()
-                          logging.info(f"현재 CPU 사용률: {cpu_usage:.1f}%")
-                          
-                          if cpu_usage < self.threshold:
-                              self.idle_count += 1
-                              logging.info(f"낮은 CPU 사용률 감지 ({self.idle_count}/{self.max_idle_checks})")
-                              
-                              if self.idle_count >= self.max_idle_checks:
-                                  logging.warning(f"CPU 사용률이 {self.idle_minutes}분간 {self.threshold}% 미만 유지됨")
-                                  logging.warning("자동 종료를 시작합니다...")
-                                  self.shutdown_instance()
-                                  break
-                          else:
-                              if self.idle_count > 0:
-                                  logging.info("CPU 사용률 정상화 - 카운터 리셋")
-                              self.idle_count = 0
-                          
-                          time.sleep(self.check_interval)
-                          
-                      except KeyboardInterrupt:
-                          logging.info("모니터링 중단됨")
-                          break
-                      except Exception as e:
-                          logging.error(f"모니터링 오류: {e}")
-                          time.sleep(10)
-
-          if __name__ == "__main__":
-              monitor = CPUMonitor()
-              monitor.monitor()
-          EOF
-
-            # 스크립트 실행 권한 부여
-            chmod +x /home/ubuntu/cpu_monitor.py
-            chown ubuntu:ubuntu /home/ubuntu/cpu_monitor.py
-
-            # systemd 서비스 생성
-            cat > /etc/systemd/system/cpu-monitor.service << 'EOF'
-          [Unit]
-          Description=CPU Usage Monitor for Auto Shutdown
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=ubuntu
-          ExecStart=/usr/bin/python3 /home/ubuntu/cpu_monitor.py
-          Restart=always
-          RestartSec=10
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-
-            # 서비스 활성화 및 시작
-            systemctl enable cpu-monitor.service
-            systemctl start cpu-monitor.service
-            
-            # 최대 실행 시간 종료 타이머 설정
-            echo "sudo shutdown -h now" | at now + ${MaxRuntimeHours} hours
-            
-            echo "CPU 자동 종료 설정 완료!"
-          else
-            echo "CPU 자동 종료 비활성화됨"
-          fi
-
   ProjectElasticIP:
     Type: AWS::EC2::EIP
     Properties:
@@ -415,47 +207,6 @@ Resources:
     Properties:
       InstanceId: !Ref ProjectInstance
       EIP: !Ref ProjectElasticIP
-
-  # CloudWatch 알람 (이중 안전장치)
-  LowCPUAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Condition: AutoShutdownEnabled
-    Properties:
-      AlarmName: !Sub '${ProjectName}-low-cpu-shutdown'
-      AlarmDescription: !Sub 'CPU 사용률 ${CPUThreshold}% 미만 ${IdlePeriodMinutes}분 지속시 자동 종료'
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: !Ref IdlePeriodMinutes
-      Threshold: !Ref CPUThreshold
-      ComparisonOperator: LessThanThreshold
-      Dimensions:
-        - Name: InstanceId
-          Value: !Ref ProjectInstance
-      AlarmActions:
-        - !Sub 'arn:aws:automate:${AWS::Region}:ec2:stop'
-      TreatMissingData: notBreaching
-
-  MaxRuntimeAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Condition: AutoShutdownEnabled
-    Properties:
-      AlarmName: !Sub '${ProjectName}-max-runtime-shutdown'
-      AlarmDescription: !Sub '최대 실행 시간 ${MaxRuntimeHours}시간 초과시 강제 종료'
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 0
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      Dimensions:
-        - Name: InstanceId
-          Value: !Ref ProjectInstance
-      AlarmActions:
-        - !Sub 'arn:aws:automate:${AWS::Region}:ec2:stop'
-      TreatMissingData: notBreaching
 
 Outputs:
   StaticIP:
@@ -485,27 +236,3 @@ Outputs:
   NextSteps:
     Description: What to do next
     Value: !Sub 'Test ${ProjectName} environment with Jupyter, then request GPU quota for g4dn.2xlarge'
-
-  AutoShutdownStatus:
-    Description: Auto shutdown configuration
-    Value: !Sub |
-      CPU 임계치: ${CPUThreshold}%
-      대기 시간: ${IdlePeriodMinutes}분
-      최대 실행: ${MaxRuntimeHours}시간
-      활성화: ${EnableAutoShutdown}
-
-  MonitoringCommands:
-    Description: Useful monitoring commands
-    Value: |
-      # CPU 모니터 로그 확인
-      sudo tail -f /var/log/cpu_monitor.log
-
-      # 서비스 상태 확인
-      sudo systemctl status cpu-monitor.service
-
-      # 현재 CPU 사용률 확인
-      htop
-
-      # 자동 종료 서비스 중지/재시작
-      sudo systemctl stop cpu-monitor.service
-      sudo systemctl start cpu-monitor.service
