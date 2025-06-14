@@ -77,7 +77,12 @@ def get_diversity(smiles_ls):
         similarity += sum(sims)
 
     n_pairs = len(pred_mols) * (len(pred_mols) - 1) / 2
-    diversity = 1 - (similarity / n_pairs) if n_pairs > 0 else 0
+    
+    # 0으로 나누기 오류 방지
+    if n_pairs == 0:
+        return 0.0
+        
+    diversity = 1 - (similarity / n_pairs)
     return diversity * 100
 
 def calculate_rewards(smiles_ls, 
