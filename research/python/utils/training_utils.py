@@ -19,6 +19,7 @@ sys.path.append(research_root)
 
 # Import from the same utils package
 from .selfies_encoding import SelfiesEncoding
+from .selfies_encoding_parallel import ParallelSelfiesEncoding, create_parallel_dataset
 from .filters import legacy_apply_filters, combine_filter, reward_fc
 from .filters_fast import fast_reward_fc, minimal_reward_fc
 from .filters_parallel import reward_fc_optimized
@@ -119,9 +120,26 @@ def load_or_create_dataset(args):
     # If pickle file does not exist, create it
     if not os.path.isfile(f"{path_to_pickle_data}.pkl"):
         print(f"Creating dataset from {path_to_dataset}...")
-        selfies = SelfiesEncoding(path_to_dataset, dataset_identifier="KRAS_Dataset_1M")
-        encoded_samples_th = torch.tensor(selfies.encoded_samples)
-        data = encoded_samples_th.float()
+        
+        # 병렬 처리 옵션 확인
+        use_parallel = getattr(args, 'use_parallel_dataset', False)
+        
+        if use_parallel:
+            print("🚀 병렬 데이터셋 생성 모드 활성화")
+            parallel_cores = getattr(args, 'parallel_dataset_cores', None)
+            chunk_size = getattr(args, 'parallel_dataset_chunk_size', 10000)
+            
+            data, selfies = create_parallel_dataset(
+                path_to_dataset,
+                n_cores=parallel_cores,
+                chunk_size=chunk_size
+            )
+        else:
+            print("📊 순차 데이터셋 생성 모드")
+            selfies = SelfiesEncoding(path_to_dataset, dataset_identifier="KRAS_Dataset_1M")
+            encoded_samples_th = torch.tensor(selfies.encoded_samples)
+            data = encoded_samples_th.float()
+        
         save_obj([data, selfies], f"{path_to_pickle_data}.pkl")
         print(f"Dataset saved to {path_to_pickle_data}.pkl")
     

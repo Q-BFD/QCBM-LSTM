@@ -54,12 +54,17 @@ class TrainingArgs(BaseModel):
     prior_tol:float = Field(default=1e-4, description="Prior 모델 최적화 허용 오차")
     
     # 성능 최적화 설정
-    fast_reward: str = Field(default="original", description="보상 함수 속도 (original/fast/minimal)")
+    fast_reward: str = Field(default="fast", description="보상 함수 속도 (original/fast/minimal)")
     
     # 병렬처리 설정
-    use_parallel_reward: bool = Field(default=False, description="보상 계산에 병렬처리 사용 여부")  
+    use_parallel_reward: bool = Field(default=True, description="보상 계산에 병렬처리 사용 여부")  
     parallel_n_cores: int = Field(default=8, description="병렬처리에 사용할 CPU 코어 수 (최대 8 권장)")
     parallel_chunk_size: int = Field(default=2000, description="병렬처리 청크 크기 (1000-5000 권장)")
+    
+    # 병렬 데이터셋 생성 설정
+    use_parallel_dataset: bool = Field(default=True, description="데이터셋 생성에 병렬처리 사용 여부")
+    parallel_dataset_cores: int = Field(default=8, description="데이터셋 생성에 사용할 CPU 코어 수")
+    parallel_dataset_chunk_size: int = Field(default=10000, description="데이터셋 병렬처리 청크 크기")
 
     # 실험 저장 경로
     experiment_root:str = Field(default="./outputs", description="실험 루트")
