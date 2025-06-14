@@ -222,8 +222,8 @@ def create_train_test_dataloaders(data, args, test_fraction=0.1):
 def setup_filter_functions(args):
     """Set up filter and reward functions."""
     # validity_fn is currently not used in the main loop but kept for potential future use.
-    # A simple lambda function is used as a placeholder.
-    validity_fn = lambda x: True
+    # A simple lambda function returning an empty list is used as a placeholder.
+    validity_fn = lambda x: []
     
     # Set up the reward function using the new unified calculate_rewards
     rew_fc = partial(
