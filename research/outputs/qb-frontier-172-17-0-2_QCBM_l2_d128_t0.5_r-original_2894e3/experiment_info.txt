@@ -1,0 +1,47 @@
+# Experiment: qb-frontier-172-17-0-2_QCBM_l2_d128_t0.5_r-original_2894e3
+# Timestamp: 2025-06-14T20:57:30.900330
+--------------------------------------------------
+
+prior_model: QCBM  # No description
+prior_size: 100  # Prior 모델 샘플 수
+num_qubits: 8  # QCBM에서 사용할 큐비트 수 (4-20 권장)
+prior_n_epochs: 30  # 사전 모델(QCBM/RBM) 학습 에폭 수
+n_qcbm_layers: 3  # Prior 모델 레이어 수
+n_qcbm_shots: 2000  # Prior 모델 샘플 수
+lstm_n_epochs: 100  # LSTM 모델 학습 에폭 수
+n_compound_generation: 1000  # 생성할 분자 수
+n_generation_steps: 10  # 생성 과정 반복 횟수
+n_lstm_layers: 2  # LSTM 모델 레이어 수
+embedding_dim: 64  # 임베딩 차원 수
+hidden_dim: 128  # 은닉층 노드 수
+data_set_id: 4  # 데이터셋 ID
+data_set_fraction: 0.005  # 데이터셋 비율
+device: auto  # No description
+gpu_count: 1  # GPU 수
+n_test_samples: 20000  # 테스트 샘플 수
+batch_size: 128  # 배치 크기
+dataset_frac: 1.0  # 데이터셋 비율
+n_samples_chemistry42: 30  # 화학 42 샘플 수
+n_test_samples_chemistry42: 300  # 화학 42 테스트 샘플 수
+optimizer_name: COBYLA  # 최적화 알고리즘 이름
+do_greedy_sampling: False  # 그리디 샘플링 여부
+temprature: 0.5  # 온도
+prior_maxiter: 50  # Prior 모델 최대 반복 횟수
+prior_tol: 0.0001  # Prior 모델 최적화 허용 오차
+fast_reward: fast  # 보상 함수 속도 (original/fast/minimal)
+use_parallel_reward: True  # 보상 계산에 병렬처리 사용 여부
+parallel_n_cores: 8  # 병렬처리에 사용할 CPU 코어 수 (최대 8 권장)
+parallel_chunk_size: 2000  # 병렬처리 청크 크기 (1000-5000 권장)
+use_parallel_dataset: True  # 데이터셋 생성에 병렬처리 사용 여부
+parallel_dataset_cores: 8  # 데이터셋 생성에 사용할 CPU 코어 수
+parallel_dataset_chunk_size: 10000  # 데이터셋 병렬처리 청크 크기
+experiment_root: /home/qb-frontier/QCBM-LSTM/research/outputs  # 실험 루트
+n_benchmark_samples: 100000  # 벤치마크 샘플 수
+max_mol_weight: 800  # No description
+reward_strategy: original  # 보상 계산 전략 선택 ('original', 'fast', 'minimal')
+selfies_backend: auto  # SELFIES 인코딩 백엔드 선택 ('auto', 'gpu', 'parallel', 'cpu')
+test_fraction: 0.1  # 테스트 데이터 비율 (기본값: 0.1 = 10%)
+use_wandb: True  # WandB 사용 여부
+wandb_project: kras-drug-discovery  # WandB 프로젝트 이름
+wandb_entity: None  # WandB 팀/사용자 이름 (선택사항)
+experiment_name: qb-frontier-172-17-0-2_QCBM_l2_d128_t0.5_r-original_2894e3  # 실험 이름 (미지정시 자동 생성)

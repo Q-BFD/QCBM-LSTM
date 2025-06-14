@@ -84,6 +84,12 @@ class TrainingArgs(BaseModel):
         description="보상 계산 전략 선택 ('original', 'fast', 'minimal')"
     )
 
+    # SELFIES 인코딩 백엔드 설정
+    selfies_backend: Literal['auto', 'gpu', 'parallel', 'cpu'] = Field(
+        default='auto',
+        description="SELFIES 인코딩 백엔드 선택 ('auto', 'gpu', 'parallel', 'cpu')"
+    )
+
     # 데이터 분할 설정
     test_fraction: float = Field(default=0.1, description="테스트 데이터 비율 (기본값: 0.1 = 10%)")
     

@@ -4,7 +4,7 @@ from collections import deque # 데크(deque) : 양방향 큐(queue) 자료구�
 import numpy as np            # 수치 연산을 위한 라이브러리
 import pandas as pd           # 데이터 분석을 위한 라이브러리
 
-# 이미지 처리를 위한 라이브러리 → 내부적으로는 Pillow 가 로드, Pillow 는 사실 “PIL” API 를 그대로 계승한 후속 패키지
+# 이미지 처리를 위한 라이브러리 → 내부적으로는 Pillow 가 로드, Pillow 는 사실 "PIL" API 를 그대로 계승한 후속 패키지
 from PIL import Image 
 
 import selfies as sf # SELFIES 인코딩 라이브러리
@@ -16,407 +16,276 @@ from .mol_methods import * # (사용자 정의) 화학 구조 처리를 위한 �
 import torch
 # from orquestra.qml.api import Tensor, convert_to_numpy # 양자 기계 학습을 위한 라이브러리
 
+import time
+import multiprocessing as mp
+import os
+import sys
 
+# --- Optional GPU Imports ---
+try:
+    import cupy
+    # Check if a CUDA-enabled GPU is actually available
+    if torch.cuda.is_available():
+        GPU_AVAILABLE = True
+        print("✅ CUDA GPU and CuPy/CuDF detected. GPU backend is available.")
+    else:
+        GPU_AVAILABLE = False
+        print("⚠️ CuPy/CuDF is installed, but no CUDA-enabled GPU was found. GPU backend is disabled.")
+except ImportError:
+    GPU_AVAILABLE = False
+    print("ℹ️ CuPy/CuDF not found. GPU backend is disabled.")
 
+# --- Helper functions for parallel processing ---
 
-# SelfiesEncoding 클래스 정의 
-class SelfiesEncoding:
+def _process_smiles_chunk(chunk_data):
+    """Processes a chunk of SMILES strings to convert them to SELFIES."""
+    smiles_list, chunk_id = chunk_data
+    results = {'chunk_id': chunk_id, 'valid_smiles': [], 'train_samples': [], 'invalid_rdkit': [], 'invalid_encoding': []}
+    for smi in smiles_list:
+        if "." in smi:
+            smi = max(smi.split("."), key=len)
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            results['invalid_rdkit'].append(smi)
+            continue
+        try:
+            encoded_smiles = sf.encoder(smi)
+            results['valid_smiles'].append(smi)
+            results['train_samples'].append(encoded_smiles)
+        except sf.EncoderError:
+            results['invalid_encoding'].append(smi)
+    return results
+
+def _process_encoding_chunk(chunk_data):
+    """Converts a chunk of padded SELFIES strings to numerical encodings."""
+    padded_selfies_chunk, char_to_index, chunk_id = chunk_data
+    encoded_samples = [sf.selfies_to_encoding(sel, char_to_index, enc_type="label") for sel in padded_selfies_chunk]
+    return chunk_id, encoded_samples
+
+# --- Main Encoder Class ---
+
+class SelfiesEncoder:
     """
-        SELFIES 인코딩 클래스 초기화.SMILES를 SELFIES로 변환하고 숫자 인코딩하여 모델 학습에 적합한 형태로 준비
-
-        Args:
-            filepath (str): SMILES를 포함한 CSV 파일 경로
-            dataset_identifier (str): 데이터셋 이름 또는 식별자
-            start_char (str): SELFIES 시퀀스 시작 문자
-            pad_char (str): SELFIES 패딩 문자
-            max_length (t.Optional[int], optional): 시퀀스 최대 길이 (기본값: 가장 긴 시퀀스 * 1.5)
-                : an optional argument to specify the maximum length of sequences.
-                  If not specified, the length of the 1.5 times the longest sequence in the provided file will be used.
+    A comprehensive class to encode SMILES strings into SELFIES and then into
+    numerical tensors, supporting multiple backends for performance optimization.
     """
     def __init__(
         self,
         filepath: str,
-        dataset_identifier: str,
+        backend: str = 'auto',
+        n_cores: int = None,
+        chunk_size: int = 10000,
+        max_length: t.Optional[int] = None,
         start_char: str = "[^]",
         pad_char: str = "[nop]",
-        max_length: t.Optional[int] = None,
     ):
-        self.dataset_identifier = dataset_identifier
-        self._filepath = filepath
-        self.df = pd.read_csv(self._filepath)
+        self.filepath = filepath
+        self.n_cores = n_cores or min(mp.cpu_count(), 8)
+        self.chunk_size = chunk_size
+        self._max_length_user = max_length
+        self._start_char = start_char
+        self._pad_char = pad_char
 
-        # 샘플 리스트 초기화
-        self.train_samples = []    # 유효한 SELFIES 시퀀스 저장
-        self.invalid_smiles_rdkit = []   # 유효하지 않은 SMILES 저장 by rdkit 유효성검사
-        self.invalid_smiles_encoding = [] # 유효하지 않은 SMILES 저장 by selfies encoding process
-        self.valid_smiles = []
-        """
-        Error 1. SELFIES의 기본 제약조건인 최대 4개의 결합을 초과하는 문제 발생
-            예시. CN1CCC(c2nc(OCC3CCCN3C)nc3c2C#[PH](=O)N(Cc2ccccc2)C3)C1
+        # --- Backend Selection ---
+        if backend == 'auto':
+            self.backend = 'gpu' if GPU_AVAILABLE else 'parallel'
+        else:
+            if backend == 'gpu' and not GPU_AVAILABLE:
+                print(f"⚠️ GPU backend requested but not available. Falling back to 'parallel'.")
+                self.backend = 'parallel'
+            else:
+                self.backend = backend
+        
+        print(f"🚀 SelfiesEncoder initialized with '{self.backend}' backend.")
+        
+        # --- Run Full Encoding Pipeline ---
+        self._run_pipeline()
 
-            수정 방법 : 제약 조건의 해제 또는 변경
-            a. 제약 완전 해제 : sf.set_semantic_constraints({})
-            b. 특정 원소만 제약 수정
-                # [PH1]의 최대 결합 수를 6으로 늘려줌
-                constraints["[PH1]"] = 6
-                # 다시 설정
-                sf.set_semantic_constraints(constraints)
-            c. Valid한 set으로만 사용
+    def _run_pipeline(self):
+        """Executes the complete encoding pipeline from file to final tensor."""
+        start_time = time.time()
+        
+        # 1. Load data
+        print(f"📊 Reading CSV file: {self.filepath}")
+        df = pd.read_csv(self.filepath)
+        smiles_list = df.smiles.tolist()
+        print(f"   ...Found {len(smiles_list):,} total SMILES strings.")
+        
+        # 2. Process SMILES to SELFIES (CPU or Parallel)
+        self.train_samples, self.valid_smiles, self.invalid_smiles_rdkit, self.invalid_smiles_encoding = self._smiles_to_selfies(smiles_list)
+        
+        # 3. Create vocabulary from valid SELFIES
+        self._create_vocabulary()
+        
+        # 4. Determine max length and pad SELFIES strings
+        self._setup_padding()
+        
+        # 5. Convert padded SELFIES to numerical encodings (CPU or Parallel)
+        encoded_np_array = self._selfies_to_numerical()
+        
+        # 6. Convert final numpy array to a torch.Tensor (using GPU if available)
+        self._encoded_samples_tensor = self._to_torch_tensor(encoded_np_array)
+        
+        total_time = time.time() - start_time
+        print(f"\n🎉 SELFIES encoding pipeline finished in {total_time:.2f} seconds.")
+        print(f"   Final tensor shape: {self.encoded_samples.shape}")
 
-        Error 2. kekulization failed
-            예시. SMILES: NCCCCCOCC1c2n[c-]n[o+]c2CCN1c1ccccc1C(F)(F)F
+    def _smiles_to_selfies(self, smiles_list):
+        """Handles the conversion from a list of SMILES to a list of SELFIES."""
+        print(f"🔄 Converting {len(smiles_list):,} SMILES to SELFIES...")
+        # This part is always CPU-bound, so we use parallel processing if possible
+        if self.backend in ['parallel', 'gpu']: # GPU backend also benefits from parallel CPU pre-processing
+            return self._smiles_to_selfies_parallel(smiles_list)
+        else: # 'cpu' backend
+            return self._smiles_to_selfies_cpu(smiles_list)
 
-            수정 방법 : 화학 구조 처리 옵션 변경
-            a. 기본 설정 유지
-            b. 특정 원소만 제약 수정
-                # 특정 원소의 화학 구조 처리 옵션 변경
-                Chem.Kekulize(mol, clearAromaticFlags=False)
-                # 다시 설정
-                Chem.Kekulize(mol, clearAromaticFlags=True)
-            c. Valid한 set으로만 사용
-        """
-        for smi in self.df.smiles.tolist():
-            # “.” 로 연결된 멀티프래그먼트 SMILES에서, 문자열 길이가 더 긴 조각(fragment)만 골라내는 로직
-            # => “molA.molB” 식으로 두 분자가 연결된 SMILES 중에서, 길이가 더 긴(=아마도 무게가 크거나 주된) 분자만 골라내도록 하는 전처리 구문
-            # 예시. “C1CCCCC1.C1CCCCC1” → “C1CCCCC1” 로 변환
+    def _smiles_to_selfies_cpu(self, smiles_list):
+        """Processes SMILES to SELFIES sequentially on the CPU."""
+        train_samples, valid_smiles, invalid_rdkit, invalid_encoding = [], [], [], []
+        for smi in smiles_list:
             if "." in smi:
                 smi = max(smi.split("."), key=len)
-            
-
-            # RDKit으로 유효성 검사 => 추가 by 진아 선생님
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
-                self.invalid_smiles_rdkit.append(smi)
-                # print(f"[INVALID] SMILES (RDKit 실패): {com}")
+                invalid_rdkit.append(smi)
                 continue
-
             try:
                 encoded_smiles = sf.encoder(smi)
-                self.valid_smiles.append(smi)
-            except sf.EncoderError as e:
-                # encoder error 처리 - 예외가 난 SMILES는 error set 저장 및 로그 생성 후 계속 진행
-                self.invalid_smiles_encoding.append(smi)
-                # print(f"Error encoding {com}: {e}")
-                continue
+                if encoded_smiles:
+                    valid_smiles.append(smi)
+                    train_samples.append(encoded_smiles)
+            except sf.EncoderError:
+                invalid_encoding.append(smi)
+        
+        print(f"   ...Finished. Found {len(valid_smiles):,} valid SELFIES.")
+        return train_samples, valid_smiles, invalid_rdkit, invalid_encoding
 
-            # 인코딩된 SMILES가 None이 아닌 경우, train_samples 리스트에 추가
-            if encoded_smiles is not None:
-                self.train_samples.append(encoded_smiles)
+    def _smiles_to_selfies_parallel(self, smiles_list):
+        """Uses multiprocessing to convert SMILES to SELFIES in parallel."""
+        chunks = [(smiles_list[i:i + self.chunk_size], i // self.chunk_size) for i in range(0, len(smiles_list), self.chunk_size)]
+        print(f"   ...Using {self.n_cores} cores to process {len(chunks)} chunks.")
         
-        print(f"Converted {len(self.train_samples)} SMILES entries to SELFIES")
-        # print(len(self.train_samples))
+        with mp.Pool(self.n_cores) as pool:
+            results = pool.map(_process_smiles_chunk, chunks)
         
-        # 알파벳 생성 : 모든 토큰을 중복 없이 모아서 집합(set)으로 만듦
+        # Aggregate results
+        train_samples, valid_smiles, invalid_rdkit, invalid_encoding = [], [], [], []
+        for result in sorted(results, key=lambda x: x['chunk_id']):
+            train_samples.extend(result['train_samples'])
+            valid_smiles.extend(result['valid_smiles'])
+            invalid_rdkit.extend(result['invalid_rdkit'])
+            invalid_encoding.extend(result['invalid_encoding'])
+            
+        print(f"   ...Finished. Found {len(valid_smiles):,} valid SELFIES.")
+        return train_samples, valid_smiles, invalid_rdkit, invalid_encoding
+
+    def _create_vocabulary(self):
+        """Creates the character-to-index mapping from the training samples."""
+        print("📚 Building vocabulary...")
         alphabet_set = sf.get_alphabet_from_selfies(self.train_samples)
+        alphabet_set.add(self._pad_char)
+        alphabet_set.add(self._start_char)
+        self.alphabet = sorted(list(alphabet_set))
+        self.char_to_index = {c: i for i, c in enumerate(self.alphabet)}
+        self.index_to_char = {i: c for c, i in self.char_to_index.items()}
+        self.vocab_size = len(self.alphabet)
+        print(f"   ...Vocabulary size: {self.vocab_size}")
 
-        # 특수 토큰 추가 (패딩, 시작 토큰)
-        """
-        start_char("[^]")와 pad_char("[nop]") 
-            - SELFIES 기반 시퀀스 모델링에서 특수 토큰(vocabulary special tokens) 으로 사용
-            - 기본 SELFIES 알파벳에는 포함되지 않으므로, 모델이 이해할 수 있도록 직접 추가
+    def _setup_padding(self):
+        """Calculates max length and creates a list of padded SELFIES strings."""
+        print("📏 Applying padding...")
+        if self._max_length_user is None:
+            # Calculate max length dynamically if not provided
+            max_len_selfies = 0
+            if self.train_samples:
+                max_len_selfies = max(sf.len_selfies(s) for s in self.train_samples)
+            self._max_length = max_len_selfies
+        else:
+            self._max_length = self._max_length_user
 
-        [nop] (Padding Token)
-            - 용도: 모든 SELFIES 시퀀스를 동일한 길이로 맞춰 주기 위해, 짧은 시퀀스의 뒤에 채워 넣는 토큰
-            - 필요성
-                - LSTM이나 QCBM 같은 순차 모델은 입력 길이가 고정되어 있거나, 배치 단위로 묶을 때 같은 길이가 되어야 학습·추론이 편리
-	            - "[nop]" 토큰을 만나면 “여기는 실제 분자 정보가 아님”을 알 수 있음
+        # Pad all selfies
+        self.padded_selfies = [s + self._pad_char * (self._max_length - sf.len_selfies(s)) for s in self.train_samples]
+        print(f"   ...All sequences padded to max length: {self.max_length}")
 
-        [^] (Start-of-Sequence Token)
-            - 용도: 시퀀스의 시작 위치를 명시해 주는 토큰
-            - 필요성
-                - 모델이 입력 시퀀스가 어디서부터 시작되는지, 혹은 “첫 토큰”을 구분해야 할 때 사용
-	            - 디코더(샘플링) 단계에서 “처음에 뭐부터 생성할지”를 지시
-        """
-        alphabet_set.add(pad_char)
-        alphabet_set.add(start_char)
-        self.alphabet = list(alphabet_set)
+    def _selfies_to_numerical(self):
+        """Converts padded SELFIES strings to a numpy array of numerical indices."""
+        print("🔢 Converting SELFIES to numerical format...")
+        if self.backend in ['parallel', 'gpu']:
+            chunks = [(self.padded_selfies[i:i + self.chunk_size], self.char_to_index, i // self.chunk_size) for i in range(0, len(self.padded_selfies), self.chunk_size)]
+            with mp.Pool(self.n_cores) as pool:
+                results = pool.map(_process_encoding_chunk, chunks)
+            
+            # Aggregate results
+            encoded_samples = []
+            for _, chunk_encoded in sorted(results, key=lambda x: x[0]):
+                encoded_samples.extend(chunk_encoded)
+            return np.array(encoded_samples, dtype=np.int64)
+        else: # 'cpu' backend
+            encoded_samples = [sf.selfies_to_encoding(s, self.char_to_index, "label") for s in self.padded_selfies]
+            return np.array(encoded_samples, dtype=np.int64)
 
+    def _to_torch_tensor(self, np_array):
+        """Converts a numpy array to a torch.Tensor, using GPU if available."""
+        print("⚡ Converting numpy array to torch.Tensor...")
+        tensor = torch.tensor(np_array, dtype=torch.long) # Use long for indices
+        if self.backend == 'gpu':
+            print("   ...Moving tensor to GPU.")
+            return tensor.cuda()
+        return tensor
 
-        # mapping char -> index and mapping index -> char
-        # 2개의 Dictionary 생성
-        # enumerate() : 리스트의 인덱스와 값을 동시에 반환하는 함수
+    # --- Public Properties and Methods ---
 
-        # char -> index : Model 입력용 숫자 Seq로 변환
-        # 예: ("[C]", 0), ("[=O]", 1), …
-        self.char_to_index = dict(
-            (c, i) for i, c in enumerate(self.alphabet) # (인덱스, 토큰) 쌍을 (토큰, 인덱스) 형태로 뒤집는 과정
-            )
-
-        # index -> char : 디코딩 시 사용
-        # 예: (0, "[C]"), (1, "[=O]"), …
-        self.index_to_char = {v: k for k, v in self.char_to_index.items()}
-
-        # 모델에 넣기 전에 알아야 할 기본 정보들(어휘 크기, 특수 토큰, 최대 길이)”을 한 번에 초기화
-        self.num_emd = len(self.char_to_index) # 딕셔너리에 담긴 토큰 개수(어휘 크기, vocabulary size)를 가져와 num_emd(임베딩 차원 수)로 저장
-        self._pad_char = pad_char
-        self._start_char = start_char
-        self.data_length = max(map(len, self.train_samples)) # 가장 긴 시퀀스의 길이를 저장
-
-        # 훈련 샘플 중 가장 긴 시퀀스 길이의 150%”를 대체 기본값(fallback_max_length)으로 설정
-        fallback_max_length = int(len(max(self.train_samples, key=len)) * 1.5) 
-        # max_length의 설정
-        self._max_length = max_length if max_length is not None else fallback_max_length 
-
-        # 디코딩 과정에서 추적할 문자열 리스트
-        self.track_strings = []
-        # self.encoded_samples_size = len(self.encoded_samples)
-
-    # 인덱스에 해당하는 문자 반환
-    def get_char_at(self, index: int) -> str:
-        return self.index_to_char[index]
-
-    # 인덱스에 해당하는 문자 리스트 반환
-    def get_chars_at(self, indices: t.List[int]) -> t.List[str]:
-        return [self.get_char_at(index) for index in indices]
-
-    # 문자에 해당하는 인덱스 반환
-    def get_index_of(self, char: str) -> int:
-        return self.char_to_index[char]
-
-    # 단일 SELFIES에 패딩 추가
-    def pad_selfie(self, selfie: str) -> str:
-        """Add padding to a selfie such that the length of the padded selfie,
-        matches that of the longest selfie in the dataset.
-        """
-        n_padding_tokens = self.max_length - sf.len_selfies(selfie)
-        padding = self.pad_char * n_padding_tokens
-        padded_selfie = selfie + padding
-
-        return padded_selfie
-
-    # train_samples 전체에 패딩 적용
     @property
-    def padded_selfies(self) -> t.List[str]:
-        """Returns a list of selfies padded such that
-        every string has the length of the longest string.
-        """
-        # faster appends and pops at edges
-        padded_selfies = deque()
-        for selfie in self.train_samples:
-            padded_selfies.append(self.pad_selfie(selfie))
+    def encoded_samples(self) -> torch.Tensor:
+        """Returns the final encoded samples as a torch.Tensor."""
+        return self._encoded_samples_tensor
 
-        return list(padded_selfies)
-
-    # 패딩 문자 반환
-    @property
-    def pad_char(self) -> str:
-        """
-        SELFIES 패딩에 사용되는 특수 토큰 문자열 반환.
-            - 예: '[nop]' 같은 토큰이 패딩용으로 사용됨
-            - 디코딩 시 무시됨
-        """
-        return self._pad_char
-
-    # 시작 문자 반환
-    @property
-    def start_char(self) -> str:
-        """
-        SELFIES 시퀀스 시작 문자 반환.
-            - 예: '[^]' 같은 토큰이 시작 토큰으로 사용됨
-        """
-        return self._start_char
-
-    # 패딩 문자 인덱스 반환
-    @property
-    def pad_char_index(self) -> int:
-        """
-        SELFIES 패딩 문자의 인덱스 반환.
-            - 예: '[nop]' -> 57
-            - 숫자 encoding 된 SELFIES 벡터를 다룰 때 필요
-        """
-        return self.get_index_of(self.pad_char)
-
-    # 시작 문자 인덱스 반환
-    @property
-    def start_char_index(self) -> int:
-        """
-        시작 문자의 인덱스 반환.
-            - 예: '[^]' -> 58
-            - 시퀀스 생성 또는 디코딩 시 사용
-        """
-        return self.get_index_of(self.start_char)
-
-    # 최대 길이 반환
     @property
     def max_length(self) -> int:
-        """
-        SELFIES 시퀀스의 최대 길이 반환.
-            - 학습 시 모델 입력 길이를 고정해야 하기 때문에 필요
-            - 자동 계산된 fallback 값 또는 수동 지정된 max_length 사용
-        """
         return self._max_length
-
-    # @property
-    # def encoded_samples(self) -> np.ndarray:
-    #     # Encode samples
-    #     to_use = [
-    #         sample
-    #         for sample in self.train_samples
-    #         if mm.verified_and_below(sample, self.max_length)
-    #     ]
-    #     encoded_samples = [
-    #         mm.encode(sam, self.max_length, self.char_to_index) for sam in to_use
-    #     ]
-    #     return np.asarray(encoded_samples)
-
-    # 인코딩된 샘플 반환 
+    
     @property
-    def encoded_samples(self) -> np.ndarray:
-        # Encode samples
-        # to_use = [
-        #     sample
-        #     for sample in self.train_samples
-        #     if mm.verified_and_below(sample, self.max_length)
-        # ]
-        """
-        패딩된 SELFIES 문자열들을 숫자 인덱스 시퀀스로 변환하여 numpy 배열로 반환.
-        - 예: '[C][=O][N]' → [12, 45, 67]
-        - 모델 입력 (X)으로 바로 사용 가능
-        - enc_type='label': 순차 인덱스
-            char_to_index = {'[C]': 0, '[=O]': 1, '[O]': 2, '[nop]': 3} 일 때
-            selfie = '[C][C][=O][O]' 👉 [0, 0, 1, 2]
-        """
-        encoded_samples = [
-            sf.selfies_to_encoding(sel, self.char_to_index, enc_type="label")
-            for sel in self.padded_selfies
-        ]
-        return np.asarray(encoded_samples)
-
-    # @property
-    # def one_hot_encoded_samples(self) -> np.ndarray:
-    #     encoded_samples = self.encoded_samples
-    #     n_samples = encoded_samples.shape[0]
-    #     one_hot_encoding = np.zeros((n_samples, self.max_length, self.num_emd))
-    #     for i_seq, seq in enumerate(encoded_samples):
-    #         for i_element, element in enumerate(seq):
-    #             one_hot_encoding[i_seq, i_element, element] = 1.0
-
-    #     return one_hot_encoding
-
-    # def decode_one_hot_smiles(self, smiles_one_hot: Tensor) -> t.List[str]:
-    #     encoded_smiles_list = convert_to_numpy(smiles_one_hot).argmax(axis=2)
-    #     return self.decode_smiles(encoded_smiles_list)
-
-    # 숫자 시퀀스를 SELFIES 문자열로 디코딩
-    def digit_to_selfies(self, encoded_selfies):
-        """
-        숫자 시퀀스를 SELFIES 문자열로 복원 : 인덱스 벡터 → SELFIES 문자열 
-            - 디코딩에 사용됨
-        """
-        selfies = sf.encoding_to_selfies(
-            encoded_selfies, self.index_to_char, enc_type="label"
-        )
-        return selfies
-
-    # orquestra.qml.api 
-    # Tensor -> torch.Tensor
-    # convert_to_numpy -> numpy.ndarray
-
-    # 숫자 시퀀스를 SMILES 문자열로 디코딩
-    def decode_fn(self, encoded_selfies: t.Union[np.ndarray, torch.Tensor]) -> t.List[str]:
-        """
-        숫자 인덱스 시퀀스 (encoded_selfies) → SELFIES 문자열 → SMILES 문자열로 디코딩.
-        - SELFIES 토큰을 시작 문자 제거하고
-        - sf.decoder()를 통해 최종 SMILES 복원
-        """
-
-        # smiles are going to be one-hot encoded
-        # encoded_sf_list = convert_to_numpy(encoded_selfies).tolist()
-
-        """
-        encoded_selfies
-        : torch.Tensor of shape (batch_size, seq_len, vocab_size) or (batch_size, seq_len)
-        """
-
-        if isinstance(encoded_selfies, torch.Tensor):
-            # 1) torch.Tensor → NumPy array
-            #    (detach, cpu 이동 후 .numpy() 로 변환) -> lists 형태로 변환
-            numpy_array = encoded_selfies.detach().cpu().numpy()
-            encoded_sf_list = numpy_array.tolist()
-        elif isinstance(encoded_selfies, np.ndarray):
-            encoded_sf_list = encoded_selfies.tolist()
-        else:
-            raise TypeError("Input must be a torch.Tensor or np.ndarray")
-
-        # 3) 디코딩 : 정수 시퀀스 → SELFIES 문자열
-        self.track_strings = []
-        decoded_sf_list = list()
-
-        for encoded_sf in encoded_sf_list:
-            # 정수 시퀀스 → SELFIES 문자열
-            decoded_sf = self.digit_to_selfies(encoded_sf)
-            # start token 제거
-            if self._start_char in decoded_sf:
-                decoded_sf = decoded_sf.replace(self._start_char, "")
-            # SELFIES → SMILES
-            decoded_smile = sf.decoder(decoded_sf)
-            decoded_sf_list.append(decoded_smile)
-        return decoded_sf_list
-
-    # 숫자 시퀀스를 SELFIES 문자열로 디코딩
-    def decode_char_selfies(self, encoded_selfies: t.Union[np.ndarray, torch.Tensor]) -> t.List[str]:
-        """
-        SELFIES 문자열 형식 자체를 디코딩 -> SMILES 문자열로 변환.
-        ※ decode_fn 는 숫자 인코딩을 SELFIES 로 바꾸고 이를 SMILES 로 디코딩하는 함수
-            - 숫자 인코딩이 아닌 문자 기반 SELFIES 입력용
-        """
-        if isinstance(encoded_selfies, torch.Tensor):
-            numpy_array = encoded_selfies.detach().cpu().numpy()
-            encoded_sf_list = numpy_array.tolist()
-        elif isinstance(encoded_selfies, np.ndarray):
-            encoded_sf_list = encoded_selfies.tolist()
-        else:
-            raise TypeError("Input must be a torch.Tensor or np.ndarray")
-
-        # 디코딩 과정에서 추적할 문자열 리스트
-        decoded_sf_list = list()
-        sf.decoder()
-        for encoded_sf in encoded_sf_list:
-            decoded_smile = sf.decoder(encoded_sf)
-            decoded_sf_list.append(decoded_smile)
-        return decoded_sf_list
-
-    """
-    # 원본 코드
-
-    def decode_fn(self, encoded_selfies: Tensor) -> t.List[str]:
-        # smiles are going to be one-hot encoded
-        encoded_sf_list = convert_to_numpy(encoded_selfies).tolist()
-        self.track_strings = []
-        decoded_sf_list = list()
-        for encoded_sf in encoded_sf_list:
-            decoded_sf = self.digit_to_selfies(encoded_sf)
-            if self._start_char in decoded_sf:
-                decoded_sf = decoded_sf.replace(self._start_char, "")
-            decoded_smile = sf.decoder(decoded_sf)
-            decoded_sf_list.append(decoded_smile)
-        return decoded_sf_list
-
-    def decode_char_selfies(self, encoded_selfies: Tensor) -> t.List[str]:
-        # smiles are going to be one-hot encoded
-        encoded_sf_list = convert_to_numpy(encoded_selfies).tolist()
-        decoded_sf_list = list()
-        sf.decoder()
-        for encoded_sf in encoded_sf_list:
-            decoded_smile = sf.decoder(encoded_sf)
-            decoded_sf_list.append(decoded_smile)
-        return decoded_sf_list
-    """
+    def pad_char_index(self) -> int:
+        return self.char_to_index[self._pad_char]
     
-    
-    # 화학 구조 시각화
-    def draw_smiles(self, smiles: str, molsPerRow: int = 0) -> Image:
-        mols = [Chem.MolFromSmiles(s) for s in smiles]
-        mols_filtered = [mol for mol in mols if mol is not None]
-        if len(mols_filtered) == 0:
-            raise RuntimeError("No Valid smiles were provided.")
+    @property
+    def start_char_index(self) -> int:
+        return self.char_to_index[self._start_char]
 
-        if molsPerRow <= 0:
-            molsPerRow = len(mols)
+    def decode(self, encoded_tensor: torch.Tensor) -> t.List[str]:
+        """Decodes a tensor of numerical indices back to SMILES strings."""
+        if not isinstance(encoded_tensor, torch.Tensor):
+            raise TypeError("Input must be a torch.Tensor.")
 
-        img = Draw.MolsToGridImage(mols, molsPerRow=molsPerRow, returnPNG=False)
-        return img
-    
+        # Move tensor to CPU and convert to list of lists
+        if encoded_tensor.is_cuda:
+            encoded_tensor = encoded_tensor.cpu()
+        
+        encoded_indices_list = encoded_tensor.numpy().tolist()
+
+        decoded_smiles_list = []
+        for encoded_indices in encoded_indices_list:
+            try:
+                # Convert indices to SELFIES string
+                selfies_string = sf.encoding_to_selfies(
+                    encoded_indices, self.index_to_char, enc_type="label"
+                )
+                
+                # Remove special characters
+                if self._start_char in selfies_string:
+                    selfies_string = selfies_string.replace(self._start_char, "")
+                if self._pad_char in selfies_string:
+                    selfies_string = selfies_string.split(self._pad_char, 1)[0]
+                
+                # Decode to SMILES
+                decoded_smile = sf.decoder(selfies_string)
+                decoded_smiles_list.append(decoded_smile)
+            except Exception:
+                # If any error occurs during decoding, append an empty string
+                decoded_smiles_list.append("")
+                
+        return decoded_smiles_list
+
 #===============================================================================================================
 
 

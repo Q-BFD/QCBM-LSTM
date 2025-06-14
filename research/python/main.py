@@ -32,7 +32,7 @@ from utils.wandb_utils import (
 from utils.experiment_manager import ExperimentManager
 
 # Import custom modules
-from utils.filters import get_diversity, legacy_apply_filters, combine_filter
+from utils.filters import get_diversity
 from utils.compound_stat import compute_compound_stats
 
 

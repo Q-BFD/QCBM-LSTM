@@ -18,9 +18,8 @@ research_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.append(research_root)
 
 # Import from the same utils package
-from .selfies_encoding import SelfiesEncoding
-from .selfies_encoding_parallel import ParallelSelfiesEncoding, create_parallel_dataset
-from .filters import legacy_apply_filters, combine_filter, calculate_rewards
+from .selfies_encoding import SelfiesEncoder
+from .filters import calculate_rewards
 from .dataloader import new_data_loader, save_obj, load_obj
 
 # Import from other modules
@@ -98,38 +97,28 @@ def load_or_create_dataset(args):
     
     # If pickle file does not exist, create it
     if not os.path.isfile(f"{path_to_pickle_data}.pkl"):
-        print(f"Creating dataset from {path_to_dataset}...")
+        print(f"🗄️ Pickle file not found. Creating dataset from {path_to_dataset}...")
         
-        # 병렬 처리 옵션 확인
-        use_parallel = getattr(args, 'use_parallel_dataset', False)
+        # 새로운 통합 SelfiesEncoder 사용
+        selfies_encoder = SelfiesEncoder(
+            filepath=path_to_dataset,
+            backend=args.selfies_backend,
+            n_cores=args.parallel_dataset_cores,
+            chunk_size=args.parallel_dataset_chunk_size
+        )
+        data_tensor = selfies_encoder.encoded_samples.float()
         
-        if use_parallel:
-            print("🚀 병렬 데이터셋 생성 모드 활성화")
-            parallel_cores = getattr(args, 'parallel_dataset_cores', None)
-            chunk_size = getattr(args, 'parallel_dataset_chunk_size', 10000)
-            
-            data, selfies = create_parallel_dataset(
-                path_to_dataset,
-                n_cores=parallel_cores,
-                chunk_size=chunk_size
-            )
-        else:
-            print("📊 순차 데이터셋 생성 모드")
-            selfies = SelfiesEncoding(path_to_dataset, dataset_identifier="KRAS_Dataset_1M")
-            encoded_samples_th = torch.tensor(selfies.encoded_samples)
-            data = encoded_samples_th.float()
-        
-        save_obj([data, selfies], f"{path_to_pickle_data}.pkl")
-        print(f"Dataset saved to {path_to_pickle_data}.pkl")
+        save_obj([data_tensor, selfies_encoder], f"{path_to_pickle_data}.pkl")
+        print(f"💾 Dataset saved to {path_to_pickle_data}.pkl")
     
     # Load pickle file
-    print(f"Loading dataset from {path_to_pickle_data}.pkl...")
+    print(f"🔄 Loading dataset from {path_to_pickle_data}.pkl...")
     object_loaded = load_obj(f"{path_to_pickle_data}.pkl")
-    selfies = object_loaded[1]
-    train_compounds = selfies.valid_smiles
-    data = object_loaded[0]
-    print(f"Dataset loaded successfully. Shape: {data.shape}")
-    print(f"Number of valid SMILES: {len(train_compounds)}")
+    data, selfies = object_loaded[0], object_loaded[1]
+    train_compounds = selfies.valid_smiles # Assuming valid_smiles is populated
+    
+    print(f"✅ Dataset loaded successfully. Shape: {data.shape}")
+    print(f"   Number of valid SMILES: {len(train_compounds):,}")
     
     return data, selfies, train_compounds
 
@@ -232,14 +221,11 @@ def create_train_test_dataloaders(data, args, test_fraction=0.1):
 
 def setup_filter_functions(args):
     """Set up filter and reward functions."""
-    validity_fn = partial(
-        combine_filter,
-        max_mol_weight=args.max_mol_weight,
-        filter_fc=legacy_apply_filters,
-        disable_tqdm=True
-    )
+    # validity_fn is currently not used in the main loop but kept for potential future use.
+    # A simple lambda function is used as a placeholder.
+    validity_fn = lambda x: True
     
-    # 새로운 통합 보상 함수를 사용하도록 수정
+    # Set up the reward function using the new unified calculate_rewards
     rew_fc = partial(
         calculate_rewards,
         reward_strategy=args.reward_strategy,
