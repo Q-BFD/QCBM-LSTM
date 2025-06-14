@@ -31,6 +31,7 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
     echo "  $0 qcbm --ssh-key id_ed25519_github_john-doe"
     echo "  $0 myproject -k id_rsa_company_alice-kim --instance-type t3.xlarge"
     echo "  $0 qcbm -k /custom/path/my_key -i c5.2xlarge -v 100"
+    echo "  $0 qcbm-parallel -k id_ed25519_github_yourname -i c5.9xlarge -v 100"
     echo ""
     echo "🔑 SSH 키 네이밍 규칙:"
     echo "  패턴: id_[키타입]_[서비스]_[사용자이름]"
@@ -45,7 +46,7 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
     echo ""
     echo "🖥️  지원되는 CPU 인스턴스:"
     echo "  - t3.medium, t3.large, t3.xlarge, t3.2xlarge (일반 목적)"
-    echo "  - c5.large, c5.xlarge, c5.2xlarge (컴퓨팅 최적화)"
+    echo "  - c5.large, c5.xlarge, c5.2xlarge, c5.4xlarge, c5.9xlarge (컴퓨팅 최적화)"
     echo "  - m5.large, m5.xlarge, m5.2xlarge (균형잡힌 성능)"
     echo "  - m7i.2xlarge, m7i.4xlarge (최신 세대)"
     echo ""
@@ -57,10 +58,11 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
     echo "   ✅ Provides VSCode Web interface"
     echo ""
     echo "💰 Cost Examples:"
-    echo "   💸 t3.large: ~\$0.09/hour (2 vCPU, 8GB RAM)"
-    echo "   💸 t3.xlarge: ~\$0.18/hour (4 vCPU, 16GB RAM)"
-    echo "   💸 c5.2xlarge: ~\$0.34/hour (8 vCPU, 16GB RAM, 컴퓨팅 최적화)"
-    echo "   💸 m7i.2xlarge: ~\$0.40/hour (8 vCPU, 32GB RAM, 최신 세대)"
+    echo "   💸 t3.large: ~$0.09/hour (2 vCPU, 8GB RAM)"
+    echo "   💸 t3.xlarge: ~$0.18/hour (4 vCPU, 16GB RAM)"
+    echo "   💸 c5.2xlarge: ~$0.34/hour (8 vCPU, 16GB RAM, 컴퓨팅 최적화)"
+    echo "   💸 c5.9xlarge: ~$0.95/hour (36 vCPU, 72GB RAM, 병렬처리 최적화)"
+    echo "   💸 m7i.2xlarge: ~$0.40/hour (8 vCPU, 32GB RAM, 최신 세대)"
     echo ""
     echo "⏱️  Setup time: ~5 minutes"
     echo ""
@@ -68,17 +70,44 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
     exit 0
 fi
 
-# Validate that SSH key argument is provided
-SSH_KEY_PROVIDED=false
-for arg in "$@"; do
-    if [[ "$arg" == "--ssh-key" ]] || [[ "$arg" == "-k" ]]; then
-        SSH_KEY_PROVIDED=true
-        break
-    fi
+# --- Argument parsing for user-friendly output ---
+PROJECT_NAME=""
+SSH_KEY_NAME=""
+# Create a temporary copy of arguments to avoid modifying the original $@
+TEMP_ARGS=("$@")
+while [[ ${#TEMP_ARGS[@]} -gt 0 ]]; do
+    case ${TEMP_ARGS[0]} in
+        -k|--ssh-key)
+            SSH_KEY_NAME="${TEMP_ARGS[1]}"
+            # Simulate shift 2
+            TEMP_ARGS=("${TEMP_ARGS[@]:2}")
+            ;;
+        -i|--instance-type|-v|--volume-size)
+             # Simulate shift 2
+             TEMP_ARGS=("${TEMP_ARGS[@]:2}")
+            ;;
+        -h|--help)
+             # Simulate shift
+             TEMP_ARGS=("${TEMP_ARGS[@]:1}")
+            ;;
+        -*)
+            # unknown option, the inner script will handle it
+            TEMP_ARGS=("${TEMP_ARGS[@]:1}")
+            ;;
+        *)
+            if [ -z "$PROJECT_NAME" ]; then
+                PROJECT_NAME="${TEMP_ARGS[0]}"
+            fi
+            # Simulate shift
+            TEMP_ARGS=("${TEMP_ARGS[@]:1}")
+            ;;
+    esac
 done
+# --- End of parsing ---
 
-if [ "$SSH_KEY_PROVIDED" = false ]; then
-    echo "❌ ERROR: SSH 키 이름이 필요합니다."
+# Validate that SSH key argument is provided (using parsed value)
+if [ -z "$PROJECT_NAME" ] || [ -z "$SSH_KEY_NAME" ]; then
+    echo "❌ ERROR: 프로젝트 이름과 SSH 키 이름이 모두 필요합니다."
     echo ""
     echo "사용법:"
     echo "  $0 PROJECT_NAME --ssh-key KEY_NAME"
@@ -94,7 +123,7 @@ echo "🚀 Starting CPU deployment..."
 echo "📁 Using infrastructure scripts from: ./.infra/"
 echo ""
 
-# Call the actual deployment script with all arguments
+# Call the actual deployment script with all original arguments
 cd .infra && ./deploy-cpu.sh "$@"
 
 # Check deployment result
@@ -108,17 +137,22 @@ if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
     echo ""
     echo "📋 Next Steps:"
     echo "   1. Wait 3-5 minutes for environment setup"
-    echo "   2. Setup SSH: ./setup-ssh.sh PROJECT_NAME --ssh-key KEY_NAME"
-    echo "   3. Connect: ssh PROJECT_NAME-container"
+    echo "   2. Setup SSH: ./setup-ssh.sh ${PROJECT_NAME} --ssh-key ${SSH_KEY_NAME}"
+    echo "   3. Connect: ssh ${PROJECT_NAME}-container"
     echo ""
     echo "🌐 Access your environment:"
-    echo "   📊 Get your IP: cd .infra && aws cloudformation describe-stacks --stack-name PROJECT_NAME-dev-cpu --query 'Stacks[0].Outputs[?OutputKey==\"StaticIP\"].OutputValue' --output text"
-    echo "   🪐 Jupyter: http://YOUR_IP:8888 (token: qcbmtoken)"
-    echo "   💻 VSCode Web: http://YOUR_IP:8080"
-    echo ""
-    echo "🔍 Monitor setup: ssh ubuntu@YOUR_IP 'tail -f /var/log/PROJECT_NAME-setup.log'"
+    IP_ADDRESS=$(aws cloudformation describe-stacks --stack-name "${PROJECT_NAME}-dev-cpu" --query "Stacks[0].Outputs[?OutputKey=='StaticIP'].OutputValue" --output text 2>/dev/null)
+    if [ -n "$IP_ADDRESS" ] && [ "$IP_ADDRESS" != "None" ]; then
+        echo "   📊 IP Address: ${IP_ADDRESS}"
+        echo "   🪐 Jupyter: http://${IP_ADDRESS}:8888 (token: qcbmtoken)"
+        echo "   💻 VSCode Web: http://${IP_ADDRESS}:8080"
+        echo ""
+        echo "🔍 Monitor setup: ssh ubuntu@${IP_ADDRESS} 'tail -f /var/log/${PROJECT_NAME}-setup.log'"
+    else
+        echo "   (Could not fetch IP automatically. Please check the AWS Console.)"
+    fi
 else
     echo ""
     echo "❌ Deployment failed! Check the error messages above."
     exit 1
-fi 
+fi
