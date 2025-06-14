@@ -94,6 +94,10 @@ def calculate_rewards(smiles_ls,
     Calculates reward scores for a list of SMILES strings in parallel.
     """
     _initialize_filters()
+    
+    total_molecules = len(smiles_ls)
+    if total_molecules == 0:
+        return torch.Tensor([])
 
     reward_functions = {
         'original': _calculate_reward_original,
@@ -109,11 +113,12 @@ def calculate_rewards(smiles_ls,
     if n_cores is None:
         n_cores = min(mp.cpu_count(), 8)
     
-    total_molecules = len(smiles_ls)
-    if total_molecules == 0:
-        return torch.Tensor([])
-        
-    effective_chunk_size = min(chunk_size, (total_molecules // n_cores) + 1) if n_cores > 0 else total_molecules
+    # 0으로 나누기 오류를 방지하기 위해 n_cores가 0보다 큰지 확인
+    if n_cores > 0:
+        effective_chunk_size = min(chunk_size, (total_molecules // n_cores) + 1)
+    else: # n_cores가 0이거나 None일 경우 순차 처리
+        effective_chunk_size = total_molecules
+    
     if effective_chunk_size == 0: effective_chunk_size = 1
 
     print(f"🚀 Calculating rewards for {total_molecules:,} molecules...")
@@ -121,8 +126,11 @@ def calculate_rewards(smiles_ls,
 
     start_time = time.time()
     
-    with mp.Pool(n_cores) as pool:
-        rewards = pool.map(single_reward_func, smiles_ls, chunksize=effective_chunk_size)
+    if n_cores > 0 and total_molecules > 1:
+        with mp.Pool(n_cores) as pool:
+            rewards = pool.map(single_reward_func, smiles_ls, chunksize=effective_chunk_size)
+    else: # 코어가 0이거나 분자가 1개 이하일 경우 순차 처리
+        rewards = [single_reward_func(s) for s in smiles_ls]
     
     elapsed_time = time.time() - start_time
     molecules_per_sec = total_molecules / elapsed_time if elapsed_time > 0 else 0
