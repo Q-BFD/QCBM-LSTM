@@ -167,6 +167,86 @@ def create_dataloader(data, args):
     )
 
 
+def split_train_test_data(data, test_fraction=0.1, seed=42):
+    """
+    데이터를 train/test로 분할합니다.
+    
+    Args:
+        data: 전체 데이터셋 (torch.Tensor)
+        test_fraction: test 데이터 비율 (기본값: 0.1 = 10%)
+        seed: 랜덤 시드
+    
+    Returns:
+        tuple: (train_data, test_data)
+    """
+    import torch
+    import numpy as np
+    
+    # 재현 가능한 결과를 위한 시드 설정
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    
+    # 데이터 크기
+    total_size = len(data)
+    test_size = int(total_size * test_fraction)
+    train_size = total_size - test_size
+    
+    # 랜덤하게 인덱스 섞기
+    indices = torch.randperm(total_size)
+    
+    # train/test 분할
+    train_indices = indices[:train_size]
+    test_indices = indices[train_size:]
+    
+    train_data = data[train_indices]
+    test_data = data[test_indices]
+    
+    print(f"📊 데이터 분할 완료:")
+    print(f"   - 전체 데이터: {total_size:,}개")
+    print(f"   - 훈련 데이터: {train_size:,}개 ({(1-test_fraction)*100:.1f}%)")
+    print(f"   - 테스트 데이터: {test_size:,}개 ({test_fraction*100:.1f}%)")
+    
+    return train_data, test_data
+
+
+def create_train_test_dataloaders(data, args, test_fraction=0.1):
+    """
+    훈련/테스트 데이터로더를 생성합니다.
+    
+    Args:
+        data: 전체 데이터셋
+        args: 훈련 인자
+        test_fraction: 테스트 데이터 비율
+    
+    Returns:
+        tuple: (train_dataloader, test_dataloader)
+    """
+    # 데이터 분할
+    train_data, test_data = split_train_test_data(data, test_fraction=test_fraction)
+    
+    # 훈련 데이터로더 (기존과 동일)
+    train_dataloader = new_data_loader(
+        data=train_data,
+        batch_size=args.batch_size,
+        drop_last=True,
+        shuffle=True,
+        seed=123,
+        fraction=args.data_set_fraction
+    )
+    
+    # 테스트 데이터로더 (셔플하지 않음)
+    test_dataloader = new_data_loader(
+        data=test_data,
+        batch_size=args.batch_size,
+        drop_last=False,  # 모든 테스트 데이터 사용
+        shuffle=False,    # 테스트는 셔플하지 않음
+        seed=123,
+        fraction=1.0      # 테스트 데이터는 전체 사용
+    )
+    
+    return train_dataloader, test_dataloader
+
+
 # =============================================================================
 # Model Creation Utils
 # =============================================================================
@@ -255,12 +335,20 @@ def create_lstm_model(args, selfies):
 # Result Saving Utils
 # =============================================================================
 
-def print_epoch_summary(epoch, compound_stats, epoch_time):
+def print_epoch_summary(epoch, compound_stats, epoch_time, train_loss=None, test_loss=None):
     """Print formatted epoch summary."""
     print(f"\n{'='*60}")
     print(f"EPOCH {epoch} SUMMARY")
     print(f"{'='*60}")
     print(f"Execution time: {epoch_time:.2f} seconds")
+    
+    # Loss 정보 출력
+    if train_loss is not None:
+        print(f"Train loss: {train_loss:.4f}")
+    if test_loss is not None:
+        print(f"Test loss: {test_loss:.4f}")
+    
+    # 기존 compound 통계
     print(f"Unique compounds: {compound_stats.n_unique:,}")
     print(f"Valid compounds: {compound_stats.n_valid:,}")
     print(f"Unseen compounds: {compound_stats.n_unseen:,}")

@@ -73,6 +73,9 @@ class TrainingArgs(BaseModel):
     
     max_mol_weight:int = Field(default=800)
     
+    # 데이터 분할 설정
+    test_fraction: float = Field(default=0.1, description="테스트 데이터 비율 (기본값: 0.1 = 10%)")
+    
     # WandB 모니터링 설정
     use_wandb: bool = Field(default=True, description="WandB 사용 여부")
     wandb_project: str = Field(default="kras-drug-discovery", description="WandB 프로젝트 이름")

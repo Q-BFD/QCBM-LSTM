@@ -20,7 +20,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.training_utils import (
     setup_environment, parse_arguments, create_experiment_directories,
     load_or_create_dataset, create_dataloader, setup_filter_functions,
-    create_prior_model, create_lstm_model, print_epoch_summary
+    create_prior_model, create_lstm_model, print_epoch_summary,
+    create_train_test_dataloaders
 )
 from utils.saving_utils import (
     save_epoch_results, save_generation_samples, save_training_summary
@@ -52,7 +53,13 @@ def main():
     
     # Load data
     data, selfies, train_compounds = load_or_create_dataset(args)
-    dataloader = create_dataloader(data, args)
+    
+    # Create train/test split
+    print(f"\n========== Data Split Configuration ==========")
+    train_dataloader, test_dataloader = create_train_test_dataloaders(data, args, test_fraction=args.test_fraction)
+    print(f"Train batches: {len(train_dataloader)}")
+    print(f"Test batches: {len(test_dataloader)}")
+    print(f"Test fraction: {args.test_fraction*100:.1f}%")
     
     # Setup functions and models
     validity_fn, rew_fc = setup_filter_functions(args)
@@ -89,11 +96,11 @@ def main():
         model.train()
         
         epoch_losses = []
-        print(f"Training on {len(dataloader)} batches...")
+        print(f"Training on {len(train_dataloader)} batches...")
         
         # Use tqdm with better settings for remote/SSH environments
         with tqdm(
-            total=len(dataloader), 
+            total=len(train_dataloader), 
             desc="Training LSTM", 
             ncols=100,
             leave=True,
@@ -101,7 +108,7 @@ def main():
             ascii=True,
             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}'
         ) as pbar:
-            for batch_idx, batch in enumerate(dataloader):
+            for batch_idx, batch in enumerate(train_dataloader):
                 inputs = batch
                 batch_size = inputs.size(0)
                 
@@ -117,9 +124,32 @@ def main():
                 
                 # Print progress every 10 batches as backup
                 if (batch_idx + 1) % 10 == 0:
-                    print(f"  Batch {batch_idx + 1}/{len(dataloader)}, Loss: {batch_result['loss']:.4f}")
+                    print(f"  Batch {batch_idx + 1}/{len(train_dataloader)}, Loss: {batch_result['loss']:.4f}")
         
-        print(f"✅ LSTM training completed. Average loss: {sum(epoch_losses)/len(epoch_losses):.4f}")
+        train_loss = sum(epoch_losses) / len(epoch_losses)
+        print(f"✅ LSTM training completed. Average train loss: {train_loss:.4f}")
+        
+        # -------------------------------------------------------------------------
+        # Test Loss Evaluation
+        # -------------------------------------------------------------------------
+        print("[Step 1.5/6] Evaluating on test set...")
+        model.eval()
+        
+        test_losses = []
+        with torch.no_grad():
+            for test_batch in test_dataloader:
+                test_inputs = test_batch
+                test_batch_size = test_inputs.size(0)
+                
+                # Generate prior samples for test
+                test_prior_samples, _, _ = prior.generate(test_batch_size, sampler=None, backend=None)
+                
+                # Evaluate on test batch
+                test_result = model.evaluate_on_batch(test_inputs, test_prior_samples)
+                test_losses.append(test_result['test_loss'])
+        
+        test_loss = sum(test_losses) / len(test_losses)
+        print(f"✅ Test evaluation completed. Average test loss: {test_loss:.4f}")
         
         # -------------------------------------------------------------------------
         # Generation and Evaluation Phase
@@ -207,12 +237,14 @@ def main():
         epoch_end_time = time.perf_counter()
         epoch_time = epoch_end_time - epoch_start_time
         
-        print_epoch_summary(epoch, compound_stats, epoch_time)
+        print_epoch_summary(epoch, compound_stats, epoch_time, train_loss, test_loss)
         
         # Log metrics to WandB
         additional_metrics = {
-            "training/lstm_loss": sum(epoch_losses) / len(epoch_losses),
-            "training/batch_count": len(dataloader)
+            "training/lstm_loss": train_loss,
+            "training/test_loss": test_loss,
+            "training/batch_count": len(train_dataloader),
+            "training/test_batch_count": len(test_dataloader)
         }
         
         if prior_loss is not None:

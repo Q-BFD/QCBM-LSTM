@@ -291,6 +291,34 @@ class NoisyLSTMv3(nn.Module):
 
         return {self.loss_key: loss.item()}
 
+    # 배치 단위로 평가 수행 (test loss 계산용)
+    def evaluate_on_batch(self, data: torch.Tensor, prior_samples: torch.Tensor) -> dict:
+        """
+        배치 단위로 평가를 수행하여 test loss를 계산합니다.
+        gradient 계산 없이 forward pass만 수행합니다.
+        """
+        if prior_samples is None:
+            raise ValueError("Received None for prior_samples.")
+
+        self.eval()  # 모델을 평가 모드로 설정
+        
+        with torch.no_grad():  # gradient 계산 비활성화
+            # 입력 데이터의 차원 확인
+            if len(data.size()) != 2:
+                raise ValueError(f"Expected 2D tensor as input, but got {len(data.size())}D tensor.")
+
+            batch_size, seq_len = data.shape
+            x0 = self._make_xo(batch_size)
+            
+            model_inputs = torch.cat((x0, data[:, : seq_len - 1]), dim=1).long()
+
+            class_logits_sequence, _ = self.forward(model_inputs, prior_samples)
+            log_prob_sequence = nn.LogSoftmax(-1)(class_logits_sequence)
+            generated_sequence_t = log_prob_sequence.permute(0, 2, 1)
+            loss = self.loss_fn(generated_sequence_t, data.long())
+
+            return {f"test_{self.loss_key}": loss.item()}
+
 
     def _generate_w_probs(
             self, 

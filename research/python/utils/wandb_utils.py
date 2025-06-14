@@ -40,6 +40,7 @@ def init_wandb(args):
                 "device": args.device,
                 "dataset_id": args.data_set_id,
                 "dataset_fraction": args.data_set_fraction,
+                "test_fraction": args.test_fraction,
                 "prior_epochs": args.prior_n_epochs,
                 "qcbm_layers": args.n_qcbm_layers,
                 "qcbm_shots": args.n_qcbm_shots,
