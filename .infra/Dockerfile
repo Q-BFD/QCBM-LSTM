@@ -53,15 +53,11 @@ RUN useradd -m -s /bin/bash ${DEV_USERNAME} && \
 WORKDIR /home/${DEV_USERNAME}
 
 # Python 패키지 설치
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt \
-    && pip3 install --no-cache-dir \
-    jupyterlab>=4.0.0 \
-    notebook>=7.0.0 \
-    ipywidgets>=8.0.0
+COPY QCBM-LSTM/requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Python 환경 및 Jupyter 커널 설정
-RUN python3 -m ipykernel install --name=python3 --display-name="Python 3" && \
+RUN python3 -m ipykernel install --user --name=python3 --display-name="Python 3 (Project)" && \
     # ${DEV_USERNAME} 사용자를 위한 Jupyter 설정 디렉토리 생성
     mkdir -p /home/${DEV_USERNAME}/.jupyter && \
     mkdir -p /home/${DEV_USERNAME}/.ipython && \

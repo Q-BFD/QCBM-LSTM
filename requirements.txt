@@ -35,3 +35,8 @@ rdkit-pypi
 
 # Additional Scientific Libraries
 selfies
+
+# Dockerfile Dependencies
+jupyterlab>=4.0.0
+notebook>=7.0.0
+ipywidgets>=8.0.0
