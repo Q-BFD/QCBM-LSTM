@@ -168,7 +168,6 @@ def main():
             encoded_compounds,
             decoder_fn,
             diversity_fn,
-            validity_fn,
             train_compounds
         )
         
@@ -205,18 +204,10 @@ def main():
         log_qcbm_distribution(epoch, prior_samples_current, dirs['plots'], num_histogram_samples=1000)
         
         # Final evaluation with verbose output
-        validity_fn_verbose = partial(
-            combine_filter,
-            max_mol_weight=args.max_mol_weight,
-            filter_fc=legacy_apply_filters,
-            disable_tqdm=False
-        )
-        
         compound_stats = compute_compound_stats(
             encoded_compounds,
             decoder_fn,
             diversity_fn,
-            validity_fn_verbose,
             train_compounds,
         )
         

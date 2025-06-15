@@ -25,8 +25,8 @@ if [ ! -f "$FULL_CONFIG_PATH" ]; then
 fi
 
 # 파이썬 스크립트 실행
-# python 디렉토리로 이동하여 실행해야 상대 경로 import 문제를 피할 수 있습니다.
-cd "$PYTHON_DIR" && python main.py --config_file "$CONFIG_FILE"
+# research 디렉토리로 이동하여 실행해야 settings 폴더를 올바르게 찾을 수 있습니다.
+cd "$RESEARCH_DIR" && python python/main.py --config_file "$CONFIG_FILE"
 
 # 실행 결과 확인
 if [ $? -eq 0 ]; then

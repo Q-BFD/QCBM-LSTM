@@ -1,7 +1,0 @@
-Experiment started: 20250614_121537
-Prior model: QCBM
-Temperature: 0.7
-Batch size: 32
-LSTM epochs: 3
-Device: auto
-Output directory: ./outputs/qcbm_histogram_test
