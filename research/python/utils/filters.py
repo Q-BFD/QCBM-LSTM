@@ -183,32 +183,44 @@ def _check_atom_count(mol, min_atoms=5, max_atoms=50):
 # --- Internal Reward Calculation Strategies ---
 
 def _calculate_reward_original(smiles, max_mol_weight=800):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return 0
-    
-    reward = 1.0
-    reward += _check_legacy_filters(mol, smiles, max_mol_weight)
-    reward += _check_pains(mol)
-    reward += _check_mcf_wehi(mol)
-    reward += _check_sa_score(mol)
-    return reward
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None: return 0
+        
+        reward = 1.0
+        reward += _check_legacy_filters(mol, smiles, max_mol_weight)
+        reward += _check_pains(mol)
+        reward += _check_mcf_wehi(mol)
+        reward += _check_sa_score(mol)
+        return reward
+    except ZeroDivisionError:
+        print(f"Warning: Reward calculation (original) failed for SMILES: {smiles}. Assigning 0.", file=sys.stderr)
+        return 0
 
 def _calculate_reward_fast(smiles, max_mol_weight=800):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return 0
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None: return 0
 
-    reward = 1.0 + 5
-    reward += _check_molecular_weight(mol, max_mol_weight)
-    reward += _check_logp(mol)
-    reward += _check_rotatable_bonds(mol)
-    reward += _check_h_bonds(mol)
-    return reward
+        reward = 1.0 + 5
+        reward += _check_molecular_weight(mol, max_mol_weight)
+        reward += _check_logp(mol)
+        reward += _check_rotatable_bonds(mol)
+        reward += _check_h_bonds(mol)
+        return reward
+    except (ZeroDivisionError, Exception) as e:
+        print(f"Warning: Reward calculation (fast) failed for SMILES: {smiles} with error {e}. Assigning 0.", file=sys.stderr)
+        return 0
 
 def _calculate_reward_minimal(smiles, max_mol_weight=800):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return 0
-        
-    reward = 1.0 + 10
-    reward += 20 if Descriptors.ExactMolWt(mol) <= max_mol_weight else 0
-    reward += _check_atom_count(mol)
-    return reward
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None: return 0
+            
+        reward = 1.0 + 10
+        reward += 20 if Descriptors.ExactMolWt(mol) <= max_mol_weight else 0
+        reward += _check_atom_count(mol)
+        return reward
+    except (ZeroDivisionError, Exception) as e:
+        print(f"Warning: Reward calculation (minimal) failed for SMILES: {smiles} with error {e}. Assigning 0.", file=sys.stderr)
+        return 0
