@@ -28,7 +28,7 @@ plotly>=5.15.0
 cloudpickle
 
 # Additional dependencies
-pydantic==2.5.3
+pydantic<2
 scipy
 wandb
 rdkit-pypi
