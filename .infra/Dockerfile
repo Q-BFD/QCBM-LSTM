@@ -53,6 +53,8 @@ RUN useradd -m -s /bin/bash ${DEV_USERNAME} && \
 WORKDIR /home/${DEV_USERNAME}
 
 # Python 패키지 설치
+# First, upgrade pip to the latest version to ensure compatibility and security
+RUN pip3 install --no-cache-dir --upgrade pip
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
