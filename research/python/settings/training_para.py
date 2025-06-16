@@ -1,6 +1,7 @@
 from typing import Literal
 import os
 import json
+import yaml  # YAML 처리를 위해 추가
 from pydantic import BaseModel, Field
 import socket
 
@@ -132,3 +133,29 @@ class TrainingArgs(BaseModel):
         with open(path, "r") as f:
             args = json.load(f)
         return cls(**args)
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "TrainingArgs":
+        """
+        YAML 파일로부터 학습 파라미터를 로드하고 기본값을 덮어쓰는 클래스 메서드.
+        
+        Args:
+            path: YAML 설정 파일 경로
+            
+        Returns:
+            TrainingArgs 인스턴스
+        """
+        # 1. Pydantic 모델의 기본값으로 초기화된 딕셔너리를 가져옵니다.
+        #    이렇게 하면 YAML에 없는 값은 기본값으로 유지됩니다.
+        defaults = cls.model_validate({}).model_dump()
+
+        # 2. YAML 파일을 읽어 딕셔너리로 변환합니다.
+        with open(path, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+
+        # 3. 읽어온 YAML 값으로 기본값을 덮어씁니다.
+        if yaml_config:
+            defaults.update(yaml_config)
+            
+        # 4. 최종 딕셔너리로 Pydantic 인스턴스를 생성합니다.
+        return cls(**defaults)

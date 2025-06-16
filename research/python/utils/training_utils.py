@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from argparse import ArgumentParser
 from functools import partial
+from typing import Literal
 
 import torch
 from rdkit import RDLogger
@@ -44,27 +45,66 @@ def setup_environment():
 
 
 def parse_arguments():
-    """Parse command line arguments and return training configuration."""
-    argparser = ArgumentParser()
-    argparser.add_argument(
-        "--config_file",
+    """
+    Parse command line arguments and return training configuration.
+    Supports loading from a YAML file and overriding with command-line arguments.
+    """
+    parser = ArgumentParser(
+        description="Train a QCBM-LSTM model for drug discovery."
+    )
+    
+    # 1. Add a dedicated argument for the config file
+    parser.add_argument(
+        "--config",
         type=str,
         default=None,
-        help="Path to config file for training. If not provided, uses default values."
+        help="Path to a YAML configuration file. Command-line arguments will override settings in this file."
     )
-    namespace = argparser.parse_args()
-    
-    # Use config file if provided, otherwise use defaults from TrainingArgs
-    if namespace.config_file and os.path.exists(namespace.config_file):
-        print(f"📄 Using config file: {namespace.config_file}")
-        args = TrainingArgs.from_file(namespace.config_file)
+
+    # Temporarily parse the config file argument to load it first
+    temp_args, _ = parser.parse_known_args()
+
+    # 2. Load settings from YAML file if provided
+    if temp_args.config and os.path.exists(temp_args.config):
+        print(f"📄 Loading configuration from: {temp_args.config}")
+        args = TrainingArgs.from_yaml(temp_args.config)
     else:
-        if namespace.config_file:
-            print(f"⚠️  Config file not found: {namespace.config_file}")
-        print("🎯 Using default configuration from TrainingArgs")
-        # Create with all defaults - only need to specify required fields
-        args = TrainingArgs(prior_model="QCBM")  # prior_model is the only required field
+        if temp_args.config:
+            print(f"⚠️ Config file not found: {temp_args.config}. Using default values.")
+        else:
+            print("🎯 No config file provided. Using default configuration from TrainingArgs.")
+        # Load Pydantic defaults (only 'prior_model' is required)
+        args = TrainingArgs(prior_model="QCBM") 
     
+    # 3. Dynamically add all other arguments from the Pydantic model
+    #    This allows overriding YAML settings from the command line.
+    for field_name, field in TrainingArgs.model_fields.items():
+        # The 'config' argument is already handled
+        if field_name == 'config':
+            continue
+        
+        # Determine the argument type, default, and help text from the Pydantic field
+        arg_type = field.annotation
+        # Handle Literal types by extracting the first choice as type
+        if hasattr(arg_type, '__origin__') and arg_type.__origin__ is Literal:
+            arg_type = type(field.default) if field.default is not None else str
+
+        parser.add_argument(
+            f"--{field_name}",
+            type=arg_type,
+            default=None, # Use None to detect if the argument was explicitly set
+            help=field.description
+        )
+    
+    # 4. Parse all arguments again to capture overrides
+    final_args = parser.parse_args()
+    
+    # Update the args object with any command-line values that were actually provided
+    for key, value in vars(final_args).items():
+        if value is not None and key != 'config':
+            print(f"🔩 Overriding '{key}' with command-line value: {value}")
+            setattr(args, key, value)
+            
     return args
 
 

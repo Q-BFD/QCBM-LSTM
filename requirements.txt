@@ -28,7 +28,7 @@ plotly>=5.15.0
 cloudpickle
 
 # Additional dependencies
-pydantic
+pydantic==2.5.3
 scipy
 wandb
 rdkit-pypi
@@ -40,3 +40,7 @@ selfies
 jupyterlab>=4.0.0
 notebook>=7.0.0
 ipywidgets>=8.0.0
+
+# Added from the code block
+qiskit_machine_learning
+PyYAML
