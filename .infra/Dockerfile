@@ -53,7 +53,7 @@ RUN useradd -m -s /bin/bash ${DEV_USERNAME} && \
 WORKDIR /home/${DEV_USERNAME}
 
 # Python 패키지 설치
-COPY QCBM-LSTM/requirements.txt .
+COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Python 환경 및 Jupyter 커널 설정
