@@ -1,4 +1,6 @@
-# QCBM-LSTM
+# research-template
+
+## Quantum Circuit Born Machine for Drug Discovery
 
 > Quantum Circuit Born Machine(QCBM)-과 Long Short-Term Memory(LSTM) 를 결합한 **하이브리드 양자-클래식** 모델 연구 프로젝트입니다.
 
@@ -162,7 +164,7 @@ jupyter notebook               # 로컬 노트북
 ### 📁 프로젝트 구조
 
 ```
-QCBM-LSTM/
+research-template/
 ├── research/                  # 연구 작업 디렉토리
 │   ├── notebooks/            # Jupyter 노트북
 │   ├── python/               # Python 스크립트
@@ -250,3 +252,7 @@ research/
 - 각 폴더에 `.gitkeep` 파일을 추가하여 빈 폴더도 Git에서 추적되도록 하세요
 - 큰 데이터 파일은 `.gitignore`에 추가하여 버전 관리에서 제외하세요
 - 실험 결과는 노트북과 함께 문서화하세요
+
+This folder contains scripts for deploying the environment on AWS. It allows you to quickly set up a development environment on EC2 with all necessary dependencies installed inside a Docker container. For more details, see the deployment guide in `research-template/infra/README.md`.
+
+### `research/`

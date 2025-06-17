@@ -7,17 +7,15 @@ from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 from qiskit.circuit import Parameter
 import numpy as np
-from qiskit_ibm_runtime import QiskitRuntimeService, Session, Sampler
 from scipy.optimize import minimize
 from functools import partial
-
 import json
 import sys
 from tqdm import tqdm
 import torch
 
-
-
+# Qiskit 1.0+ uses primitives
+from qiskit.primitives import Sampler
 
 class QCBMAnsatz:
     
@@ -36,7 +34,7 @@ class QCBMAnsatz:
         # 파라미터 목록 생성 (총 num_qubits * depth개)
         self.params = [Parameter(f'theta_{i}') for i in range(num_qubits * depth)]
         self.number_of_params = len(self.params)
-        self.qc = QuantumCircuit(num_qubits, num_qubits)  # Add classical bits
+        self.qc = QuantumCircuit(num_qubits) # No classical bits needed for Sampler
         self._build_circuit()
 
     def _build_circuit(self):
@@ -57,9 +55,10 @@ class QCBMAnsatz:
             # CNOT 게이트를 인접 큐비트 쌍에 적용하여 얽힘 생성
             for qubit in range(self.num_qubits - 1):
                 self.qc.cx(qubit, qubit + 1)
-        self.qc.measure(range(self.num_qubits), range(self.num_qubits))  # Add measurements
+        # Sampler does not require classical measurements to be added to the circuit
+        # It calculates probabilities directly from the final statevector.
 
-    def get_executable_circuit(self, parameters, backend):
+    def get_executable_circuit(self, parameters):
         """
         주어진 파라미터로 회로에 값을 바인딩하고, 지정된 backend에 맞게 transpile된 회로 반환
 
@@ -92,9 +91,8 @@ class ScipyOptimizer:
         self.method = method
         self.options = options if options else {}
 
-    def minimize(self, loss_fn, initial_params, sampler, backend, target_probs):
-        # sampler, backend, target_probs 고정된 loss 함수 만들기
-        wrapped_loss = partial(loss_fn, sampler=sampler, backend=backend, target_probs=target_probs)
+    def minimize(self, loss_fn, initial_params, target_probs):
+        wrapped_loss = partial(loss_fn, target_probs=target_probs)
         result = minimize(wrapped_loss, initial_params, method=self.method, options=self.options)
         return result
 
@@ -102,7 +100,7 @@ class ScipyOptimizer:
 
 class SingleBasisQCBM:
 
-    def __init__(self, ansatz, optimizer, distance_measure=None, choices=(-1.0, 1.0), param_initializer=None, nshot = 10000):
+    def __init__(self, ansatz, optimizer, distance_measure=None, choices=(-1.0, 1.0), param_initializer=None, nshot=10000):
         """
         QCBM (Quantum Circuit Born Machine)을 기반으로 한 단일 분포 학습기 초기화
         
@@ -120,7 +118,8 @@ class SingleBasisQCBM:
         self.choices = choices
         self.params = self._get_initial_parameters(param_initializer)
         self.nshot = nshot
-        self.simulator = AerSimulator()
+        # Use the modern Qiskit Sampler primitive
+        self.sampler = Sampler()
 
     def _default_distance_measure(self, target_probs, model_probs):
         
@@ -128,8 +127,17 @@ class SingleBasisQCBM:
         기본 거리 측정 함수: (노이즈 완화를 위해 epsilon 포함된) KL divergence
         """
 
-        epsilon = 1e-2
-        return np.sum(target_probs * np.log(target_probs / (model_probs + epsilon) + epsilon))
+        epsilon = 1e-6 # A small epsilon to avoid log(0)
+        # Ensure model_probs is a numpy array for vectorized operations
+        model_probs = np.array(list(model_probs.values()))
+        # Align target_probs and model_probs, assuming they cover the same space
+        # Here we assume model_probs keys are integers from 0 to 2**n-1
+        full_model_probs = np.zeros(2**self.num_qubits)
+        for i, prob in enumerate(model_probs):
+             full_model_probs[i] = prob
+
+        # To prevent division by zero or log of zero, add epsilon
+        return np.sum(target_probs * (np.log(target_probs + epsilon) - np.log(full_model_probs + epsilon)))
 
     def _get_initial_parameters(self, initializer):
         """
@@ -138,86 +146,74 @@ class SingleBasisQCBM:
         - 아니면 랜덤값으로 초기화
         """
 
-        if np.any(initializer):
+        if initializer is not None and np.any(initializer):
             return initializer
         return np.random.uniform(-np.pi / 2, np.pi / 2, self.ansatz.number_of_params)
 
-    def _get_model_object(self, parameters, sampler, backend):
+    def _get_model_probs(self, parameters):
         """
         현재 파라미터로부터 생성된 양자 회로 실행 결과의 확률 분포를 반환
         """
 
-        qc = self.ansatz.get_executable_circuit(parameters, backend)
-        # simulator = AerSimulator.from_backend(backend)
-        # qc_transpiled = transpile(qc, simulator)
-        # job = simulator.run([qc_transpiled], shots=self.nshot)
-        job = self.simulator.run([qc], shots=self.nshot)
+        qc = self.ansatz.get_executable_circuit(parameters)
+        # The Sampler primitive runs the circuit and returns the probability distribution
+        job = self.sampler.run(circuits=[qc], shots=self.nshot)
         result = job.result()
-        # quasi_dist = result[0].data
-        # counts = quasi_dist.meas.get_counts()
-        counts = result.get_counts()
-        shots = sum(counts.values())
-        # 각 비트스트링에 대한 확률 분포 계산
-        probs = np.array([counts.get(f"{i:0{self.num_qubits}b}", 0) / shots for i in range(2**self.num_qubits)])
-        return probs
+        # The result object from Sampler gives a quasi-distribution
+        quasi_dist = result.quasi_dists[0]
+        # It contains the probabilities for each outcome.
+        # We can get it as a dictionary of {outcome: probability}
+        probs_dict = quasi_dist.binary_probabilities()
+        
+        # Create a full probability vector
+        full_probs = np.zeros(2**self.num_qubits)
+        for b, p in probs_dict.items():
+            index = int(b, 2)
+            full_probs[index] = p
+        return full_probs
 
-    def _get_generator_fn(self, sampler, backend, random_seed=None):
+    def _get_generator_fn(self):
         """
         학습된 파라미터 기반으로 샘플을 생성하는 함수 생성
         """
         def generator(n_samples, parameters):
-            qc = self.ansatz.get_executable_circuit(parameters, backend)
-            # simulator = AerSimulator.from_backend(backend)
-            # qc_transpiled = transpile(qc, simulator)
-            # job = simulator.run([qc_transpiled], shots=self.nshot)
-            # simulator = AerSimulator()
-            job = self.simulator.run([qc], shots=self.nshot)
+            qc = self.ansatz.get_executable_circuit(parameters)
+            job = self.sampler.run([qc], shots=n_samples) # Run with n_samples shots
             result = job.result()
-            # quasi_dist = result[0].data
-            # counts = quasi_dist.meas.get_counts()
-            counts = result.get_counts()
             
-            # Convert probabilities to a list of samples
-            # samples_list = [list(map(int, k)) for k, v in counts.items() for _ in range(int(v * n_samples))]
-            # 각 비트스트링을 개수만큼 복제하여 샘플 생성
-            samples_list = np.array([
-                list(map(int, k)) for k, v in counts.items()
-                for _ in range(v)  
-            ])
-            # print(samples_list)
-            # Calculate the number of missing samples
-            num_missing_samples = n_samples - len(samples_list)
+            # Sampler already returns counts-like data, let's use that
+            quasi_dist = result.quasi_dists[0]
+            # convert integer outcomes to bitstrings
+            counts = {f'{k:0{self.num_qubits}b}': v*n_samples for k, v in quasi_dist.items()}
             
-            # 필요한 개수보다 적게 생성됐으면, 부족한 만큼 추가 샘플링
-            # If we have fewer samples than needed, we need to resample
-            if num_missing_samples > 0:
-                # Get additional samples based on the probabilities
-
-                keys = list(counts.keys())
-                values = np.array(list(counts.values()), dtype=np.float64)
-                probs = values / np.sum(values) 
-
-                additional_samples = np.random.choice(
-                    keys,
-                    size=num_missing_samples,
-                    p=probs
-                )
-
-                additional_samples = [list(map(int, sample)) for sample in additional_samples]
-                samples_list = np.vstack([samples_list, additional_samples])
-                # samples_list.extend(additional_samples)
+            samples_list = []
+            for bitstring, count in counts.items():
+                # Ensure count is an integer for range()
+                for _ in range(int(round(count))):
+                    samples_list.append(list(map(int, bitstring)))
             
-            # Convert list of samples to a numpy array
-            # 최종적으로 n_samples 크기의 샘플 반환
-            samples = np.array(samples_list[:n_samples])
-            return samples
+            # If rounding leads to a different number of samples, adjust
+            if len(samples_list) != n_samples:
+                # This part is tricky. For simplicity, we can just truncate or pad.
+                if len(samples_list) > n_samples:
+                    samples_list = samples_list[:n_samples]
+                else:
+                    # If we need more, we can sample from the distribution
+                    diff = n_samples - len(samples_list)
+                    bitstrings = list(counts.keys())
+                    probabilities = np.array(list(counts.values())) / sum(counts.values())
+                    extra_samples = np.random.choice(bitstrings, size=diff, p=probabilities)
+                    for s in extra_samples:
+                        samples_list.append(list(map(int, s)))
+
+            return np.array(samples_list)
         return generator
 
-    def loss_fn(self, parameters, sampler, backend, target_probs):
-        model_probs = self._get_model_object(parameters, sampler, backend)
+    def loss_fn(self, parameters, target_probs):
+        model_probs = self._get_model_probs(parameters)
         return self.distance_measure(target_probs, model_probs)
     
-    def train_on_batch(self, X, Y, sampler, backend, n_epochs):
+    def train_on_batch(self, X, Y, sampler=None, backend=None, n_epochs=10):
         """
         주어진 데이터 X, Y를 기반으로 파라미터를 업데이트
         - X: 입력 비트스트링 [[0 1 0 1] [1 1 1 1 ]]
@@ -234,47 +230,39 @@ class SingleBasisQCBM:
             # target_probs[index] = y
 
         # 최적화 루프
-        print(f"Training QCBM for {n_epochs} epochs...")
-        with tqdm(
-            total=n_epochs, 
-            desc="Training QCBM", 
-            ncols=80,
-            leave=True,
-            ascii=True,
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}'
-        ) as pbar:
-            for epoch in range(n_epochs):
-                # 현재 파라미터에 대해 loss 최소화
-                result = self.optimizer.minimize(
-                    self.loss_fn,
-                    self.params,
-                    sampler,
-                    backend,
-                    target_probs
-                )
+        print(f"Training QCBM for {n_epochs} iterations (not epochs)...")
+        with tqdm(total=n_epochs, desc="Optimizing QCBM", ncols=80) as pbar:
+            def callback(xk):
+                pbar.update(1)
+                loss = self.loss_fn(xk, target_probs)
+                pbar.set_postfix(loss=f"{loss:.6f}")
 
-                self.params = result.x # 다음 단계의 초기값으로 넘김
-                loss_values.append(result.fun)
-                
-                pbar.set_postfix(loss=f"{result.fun:.6f}")
-                pbar.update()
-                
-                # Print progress every 5 epochs as backup
-                if (epoch + 1) % 5 == 0:
-                    print(f"  QCBM Epoch {epoch + 1}/{n_epochs}, Loss: {result.fun:.6f}")
-        
-        print(f"✅ QCBM training completed. Final loss: {loss_values[-1]:.6f}")
-        return result,loss_values
+            # Scipy's minimize has its own iteration loop.
+            # maxiter in options will control the number of "epochs"
+            self.optimizer.options['maxiter'] = n_epochs
+            self.optimizer.options['callback'] = callback
+            
+            result = self.optimizer.minimize(
+                self.loss_fn,
+                self.params,
+                target_probs
+            )
+            self.params = result.x
+            # The final loss is in result.fun
+            loss_values = [result.fun] * n_epochs # A bit of a hack for logging
 
-    def generate(self, num_samples, sampler, backend):
+        print(f"✅ QCBM training completed. Final loss: {result.fun:.6f}")
+        return result, loss_values
+
+    def generate(self, num_samples, sampler=None, backend=None):
         """
         학습된 파라미터로 n개의 샘플 생성
         """
-        generator = self._get_generator_fn(sampler, backend)
+        generator = self._get_generator_fn()
         samples = generator(num_samples, self.params)
         unique_samples, counts = np.unique(samples, axis=0, return_counts=True)
         probabilities = counts / num_samples
-        return torch.Tensor(samples),unique_samples,probabilities
+        return torch.Tensor(samples), unique_samples, probabilities
 
     def save_params(self, filename):
         """

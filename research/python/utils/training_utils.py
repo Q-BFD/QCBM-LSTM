@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from argparse import ArgumentParser
 from functools import partial
+from typing import Literal
 
 import torch
 from rdkit import RDLogger
@@ -53,7 +54,7 @@ def parse_arguments():
         "--config_file",
         type=str,
         default=None,
-        help="Path to config file for training. If not provided, uses default values."
+        help="Path to a YAML configuration file. Command-line arguments will override settings in this file."
     )
     namespace = argparser.parse_args()
     

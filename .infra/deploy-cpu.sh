@@ -39,8 +39,8 @@ show_usage() {
 # =====================================
 PROJECT_NAME=""
 SSH_KEY_NAME=""
-INSTANCE_TYPE="t3.large"
-VOLUME_SIZE="50"
+INSTANCE_TYPE="m7i.2xlarge"
+VOLUME_SIZE="100"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
