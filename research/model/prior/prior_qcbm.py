@@ -15,7 +15,7 @@ from tqdm import tqdm
 import torch
 
 # Qiskit 1.0+ uses primitives
-from qiskit.primitives import Sampler
+from qiskit_aer.primitives import Sampler
 
 class QCBMAnsatz:
     
@@ -34,7 +34,8 @@ class QCBMAnsatz:
         # 파라미터 목록 생성 (총 num_qubits * depth개)
         self.params = [Parameter(f'theta_{i}') for i in range(num_qubits * depth)]
         self.number_of_params = len(self.params)
-        self.qc = QuantumCircuit(num_qubits) # No classical bits needed for Sampler
+        # 클래식 비트는 measure_all()이 자동으로 추가하도록 합니다.
+        self.qc = QuantumCircuit(num_qubits)
         self._build_circuit()
 
     def _build_circuit(self):
@@ -55,8 +56,9 @@ class QCBMAnsatz:
             # CNOT 게이트를 인접 큐비트 쌍에 적용하여 얽힘 생성
             for qubit in range(self.num_qubits - 1):
                 self.qc.cx(qubit, qubit + 1)
-        # Sampler does not require classical measurements to be added to the circuit
-        # It calculates probabilities directly from the final statevector.
+        
+        # Sampler가 측정 결과를 반환할 수 있도록 모든 큐비트를 측정합니다.
+        self.qc.measure_all(inplace=True)
 
     def get_executable_circuit(self, parameters):
         """
@@ -91,9 +93,8 @@ class ScipyOptimizer:
         self.method = method
         self.options = options if options else {}
 
-    def minimize(self, loss_fn, initial_params, target_probs):
-        wrapped_loss = partial(loss_fn, target_probs=target_probs)
-        result = minimize(wrapped_loss, initial_params, method=self.method, options=self.options)
+    def minimize(self, loss_fn, initial_params, args=(), callback=None):
+        result = minimize(loss_fn, initial_params, args=args, method=self.method, options=self.options, callback=callback)
         return result
 
 
@@ -163,7 +164,7 @@ class SingleBasisQCBM:
         quasi_dist = result.quasi_dists[0]
         # It contains the probabilities for each outcome.
         # We can get it as a dictionary of {outcome: probability}
-        probs_dict = quasi_dist.binary_probabilities()
+        probs_dict = quasi_dist.binary_probabilities(num_bits=self.num_qubits)
         
         # Create a full probability vector
         full_probs = np.zeros(2**self.num_qubits)
@@ -178,34 +179,34 @@ class SingleBasisQCBM:
         """
         def generator(n_samples, parameters):
             qc = self.ansatz.get_executable_circuit(parameters)
-            job = self.sampler.run([qc], shots=n_samples) # Run with n_samples shots
+            job = self.sampler.run([qc], shots=n_samples)
             result = job.result()
-            
-            # Sampler already returns counts-like data, let's use that
-            quasi_dist = result.quasi_dists[0]
-            # convert integer outcomes to bitstrings
-            counts = {f'{k:0{self.num_qubits}b}': v*n_samples for k, v in quasi_dist.items()}
-            
-            samples_list = []
-            for bitstring, count in counts.items():
-                # Ensure count is an integer for range()
-                for _ in range(int(round(count))):
-                    samples_list.append(list(map(int, bitstring)))
-            
-            # If rounding leads to a different number of samples, adjust
-            if len(samples_list) != n_samples:
-                # This part is tricky. For simplicity, we can just truncate or pad.
-                if len(samples_list) > n_samples:
-                    samples_list = samples_list[:n_samples]
-                else:
-                    # If we need more, we can sample from the distribution
-                    diff = n_samples - len(samples_list)
-                    bitstrings = list(counts.keys())
-                    probabilities = np.array(list(counts.values())) / sum(counts.values())
-                    extra_samples = np.random.choice(bitstrings, size=diff, p=probabilities)
-                    for s in extra_samples:
-                        samples_list.append(list(map(int, s)))
 
+            # result is a SamplerResult (V1 API), which contains a list of quasi_dists.
+            # We ran one circuit, so we take the first quasi_distribution.
+            quasi_dist = result.quasi_dists[0]
+            
+            # quasi_dist.keys() are integers representing the measurement outcomes.
+            outcomes = np.array(list(quasi_dist.keys()))
+            probabilities = np.array(list(quasi_dist.values()))
+            
+            # Defensive coding for probabilities
+            probabilities[probabilities < 0] = 0 # Remove any small negative noise
+            prob_sum = np.sum(probabilities)
+            if prob_sum > 0:
+                probabilities /= prob_sum # Normalize
+            else:
+                # If all probabilities are zero, sample uniformly
+                probabilities = np.ones(len(outcomes)) / len(outcomes)
+
+            # Sample `n_samples` times from the distribution.
+            sampled_outcomes = np.random.choice(outcomes, size=n_samples, p=probabilities)
+            
+            # Convert integer outcomes to padded binary strings, then to lists of ints.
+            samples_list = [
+                list(map(int, f'{s:0{self.num_qubits}b}')) for s in sampled_outcomes
+            ]
+            
             return np.array(samples_list)
         return generator
 
@@ -226,8 +227,6 @@ class SingleBasisQCBM:
         for x, y in zip(X, Y):
             index = int("".join(map(str, x.int().tolist())), 2)
             target_probs[index] = y
-            # index = int("".join(map(str, x)), 2)
-            # target_probs[index] = y
 
         # 최적화 루프
         print(f"Training QCBM for {n_epochs} iterations (not epochs)...")
@@ -240,13 +239,14 @@ class SingleBasisQCBM:
             # Scipy's minimize has its own iteration loop.
             # maxiter in options will control the number of "epochs"
             self.optimizer.options['maxiter'] = n_epochs
-            self.optimizer.options['callback'] = callback
             
             result = self.optimizer.minimize(
                 self.loss_fn,
                 self.params,
-                target_probs
+                args=(target_probs,),
+                callback=callback
             )
+            
             self.params = result.x
             # The final loss is in result.fun
             loss_values = [result.fun] * n_epochs # A bit of a hack for logging
