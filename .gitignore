@@ -122,4 +122,5 @@ temp/
 
 # Ignore experiment results and logs
 research/outputs/
-research/wandb/ 
+research/wandb/
+outputs/
