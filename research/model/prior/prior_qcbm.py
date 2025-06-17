@@ -129,16 +129,11 @@ class SingleBasisQCBM:
         """
 
         epsilon = 1e-6 # A small epsilon to avoid log(0)
-        # Ensure model_probs is a numpy array for vectorized operations
-        model_probs = np.array(list(model_probs.values()))
-        # Align target_probs and model_probs, assuming they cover the same space
-        # Here we assume model_probs keys are integers from 0 to 2**n-1
-        full_model_probs = np.zeros(2**self.num_qubits)
-        for i, prob in enumerate(model_probs):
-             full_model_probs[i] = prob
-
+        # model_probs is now a complete probability vector (numpy array),
+        # so it can be used directly in the KL divergence formula.
+        
         # To prevent division by zero or log of zero, add epsilon
-        return np.sum(target_probs * (np.log(target_probs + epsilon) - np.log(full_model_probs + epsilon)))
+        return np.sum(target_probs * (np.log(target_probs + epsilon) - np.log(model_probs + epsilon)))
 
     def _get_initial_parameters(self, initializer):
         """

@@ -18,43 +18,46 @@ class ExperimentManager:
         self.dirs = {}
         self.logger = get_logger()
 
-        self._generate_experiment_name_if_needed()
+        # 이름 생성 로직을 __init__에서 직접 호출하여 항상 실행되도록 보장합니다.
+        self._generate_experiment_name()
         self._setup_directories()
         self._save_config_info()
 
-    def _generate_experiment_name_if_needed(self):
-        """실험 이름이 제공되지 않은 경우, 주요 파라미터를 기반으로 자동 생성합니다."""
-        if self.args.experiment_name and self.args.experiment_name.strip() != "":
-            self.logger.info(f"✅ 제공된 실험 이름 사용: {self.args.experiment_name}")
-            return
-
-        try:
-            username = getpass.getuser()
-        except:
-            username = "user"
-
+    def _generate_experiment_name(self):
+        """
+        실험 이름을 생성합니다.
+        - JSON 파일에 이름이 있으면 접두사로 사용합니다.
+        - 이름이 없으면 사용자명을 접두사로 사용합니다.
+        - 모델 파라미터, IP, 해시를 조합하여 최종 이름을 완성합니다.
+        """
+        base_name = self.args.experiment_name or getpass.getuser()
+        self.logger.info(f"실험 이름 생성을 위해 '{base_name}'을(를) 기본 접두사로 사용합니다.")
+        
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
-            ip_address = s.getsockname()[0].replace('.', '-')
+            ip_address_full = s.getsockname()[0]
             s.close()
-        except:
-            ip_address = "no-ip"
+            ip_suffix = "".join([part[-1] for part in ip_address_full.split('.')])
+        except Exception:
+            ip_suffix = "no-ip"
 
-        hash_input = f"{datetime.datetime.now().isoformat()}_{username}_{ip_address}"
+        hash_input = f"{datetime.datetime.now().isoformat()}_{base_name}_{ip_suffix}"
         hash_6digit = hashlib.md5(hash_input.encode()).hexdigest()[:6]
 
-        name_parts = [
-            f"{username}-{ip_address}",
+        dynamic_parts = [
             self.args.prior_model,
             f"l{self.args.n_lstm_layers}",
             f"d{self.args.hidden_dim}",
             f"t{self.args.temprature}",
             f"r-{self.args.reward_strategy}",
+            f"ip{ip_suffix}",
             hash_6digit
         ]
-        self.args.experiment_name = "_".join(map(str, name_parts))
-        self.logger.info(f"🔧 실험 이름이 제공되지 않아 자동으로 생성합니다: {self.args.experiment_name}")
+        
+        final_name = f"{base_name}_{'_'.join(map(str, dynamic_parts))}"
+        self.args.experiment_name = final_name
+        self.logger.info(f"✅ 최종 생성된 실험 이름: {self.args.experiment_name}")
 
     def _setup_directories(self):
         """실험 결과 저장을 위한 디렉토리 구조를 생성합니다."""
