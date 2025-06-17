@@ -1,20 +1,24 @@
-import datetime
+import wandb
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
+import matplotlib.pyplot as plt
+import datetime
+
+from .logging_utils import get_logger
 
 try:
     import wandb
     WANDB_AVAILABLE = True
 except ImportError:
     WANDB_AVAILABLE = False
-    print("Warning: wandb is not available. WandB logging will be disabled.")
+    get_logger().warning("Warning: wandb is not available. WandB logging will be disabled.")
 
 
 def init_wandb(args):
     """Initialize Weights & Biases logging."""
+    logger = get_logger()
     if not args.use_wandb or not WANDB_AVAILABLE:
-        print("📊 WandB monitoring disabled")
+        logger.info("📊 WandB monitoring disabled")
         return None
     
     try:
@@ -50,17 +54,18 @@ def init_wandb(args):
             tags=[args.prior_model, f"temp_{args.temprature}", f"batch_{args.batch_size}"]
         )
         
-        print(f"🚀 WandB initialized: {wandb_run.name}")
-        print(f"📊 Dashboard: {wandb_run.url}")
+        logger.info(f"🚀 WandB initialized: {wandb_run.name}")
+        logger.info(f"📊 Dashboard: {wandb_run.url}")
         return wandb_run
         
     except Exception as e:
-        print(f"❌ WandB initialization failed: {e}")
+        logger.error(f"❌ WandB initialization failed: {e}")
         return None
 
 
 def log_epoch_metrics(epoch, compound_stats, epoch_time, additional_metrics=None):
     """Log epoch metrics to WandB."""
+    logger = get_logger()
     if not WANDB_AVAILABLE or not wandb.run:
         return
     
@@ -83,29 +88,30 @@ def log_epoch_metrics(epoch, compound_stats, epoch_time, additional_metrics=None
         wandb.log(metrics, step=epoch)
         
     except Exception as e:
-        print(f"⚠️ WandB logging failed: {e}")
+        logger.warning(f"⚠️ WandB logging failed: {e}")
 
 
 def log_molecules_to_wandb(epoch, compound_stats, plots_dir):
     """Log molecule images to WandB."""
+    logger = get_logger()
     if not WANDB_AVAILABLE or not wandb.run:
-        print("⚠️ WandB not available - skipping molecule logging")
+        logger.warning("⚠️ WandB not available - skipping molecule logging")
         return
     
     try:
         # Log molecule image if it exists
         molecule_img_path = plots_dir / f"epoch_{epoch}_molecules.png"
-        print(f"🔍 Checking for molecule image: {molecule_img_path}")
+        logger.debug(f"🔍 Checking for molecule image: {molecule_img_path}")
         
         if molecule_img_path.exists():
-            print(f"✅ Found molecule image, uploading to WandB...")
+            logger.debug(f"✅ Found molecule image, uploading to WandB...")
             wandb.log({
                 "molecules/generated_samples": wandb.Image(str(molecule_img_path), 
                                                          caption=f"Epoch {epoch} - Generated molecules")
             }, step=epoch)
-            print(f"🚀 Successfully uploaded molecule image for epoch {epoch}")
+            logger.info(f"🚀 Successfully uploaded molecule image for epoch {epoch}")
         else:
-            print(f"❌ Molecule image not found: {molecule_img_path}")
+            logger.warning(f"❌ Molecule image not found: {molecule_img_path}")
         
         # Log sample SMILES as table
         if len(compound_stats.valid_compounds) > 0:
@@ -115,24 +121,25 @@ def log_molecules_to_wandb(epoch, compound_stats, plots_dir):
                 data=[[smiles, epoch] for smiles in sample_smiles]
             )
             wandb.log({"molecules/sample_smiles": smiles_table}, step=epoch)
-            print(f"📊 Uploaded SMILES table with {len(sample_smiles)} entries")
+            logger.info(f"📊 Uploaded SMILES table with {len(sample_smiles)} entries")
         else:
-            print("⚠️ No valid compounds to upload as SMILES table")
+            logger.info("⚠️ No valid compounds to upload as SMILES table")
             
     except Exception as e:
-        print(f"⚠️ WandB molecule logging failed: {e}")
+        logger.error(f"⚠️ WandB molecule logging failed: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
 
 
 def finish_wandb():
     """Finish WandB run."""
+    logger = get_logger()
     if WANDB_AVAILABLE and wandb.run:
         try:
             wandb.finish()
-            print("✅ WandB run finished")
+            logger.info("✅ WandB run finished")
         except Exception as e:
-            print(f"⚠️ WandB finish failed: {e}")
+            logger.error(f"⚠️ WandB finish failed: {e}")
 
 
 def log_qcbm_distribution(epoch, prior_samples, plots_dir, num_histogram_samples=1000):
@@ -145,6 +152,7 @@ def log_qcbm_distribution(epoch, prior_samples, plots_dir, num_histogram_samples
         plots_dir: 플롯 저장 디렉토리
         num_histogram_samples: histogram에 사용할 샘플 수
     """
+    logger = get_logger()
     if not WANDB_AVAILABLE or not wandb.run:
         return
     
@@ -231,12 +239,12 @@ def log_qcbm_distribution(epoch, prior_samples, plots_dir, num_histogram_samples
             "qcbm/hamming_weights": wandb.Histogram(hamming_weights)
         }, step=epoch)
         
-        print(f"📊 QCBM distribution logged to WandB for epoch {epoch}")
-        print(f"   - Unique patterns: {len(unique_patterns)}/{len(samples)}")
-        print(f"   - Average Hamming weight: {np.mean(hamming_weights):.2f}")
-        print(f"   - Entropy: {-np.sum((counts/len(samples)) * np.log2(counts/len(samples) + 1e-10)):.2f}")
+        logger.info(f"📊 QCBM distribution logged to WandB for epoch {epoch}")
+        logger.info(f"   - Unique patterns: {len(unique_patterns)}/{len(samples)}")
+        logger.info(f"   - Average Hamming weight: {np.mean(hamming_weights):.2f}")
+        logger.info(f"   - Entropy: {-np.sum((counts/len(samples)) * np.log2(counts/len(samples) + 1e-10)):.2f}")
         
     except Exception as e:
-        print(f"⚠️ QCBM distribution logging failed: {e}")
+        logger.error(f"⚠️ QCBM distribution logging failed: {e}")
         import traceback
-        traceback.print_exc() 
+        logger.error(traceback.format_exc()) 

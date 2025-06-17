@@ -6,8 +6,8 @@ RESEARCH_DIR="$( dirname "$SCRIPT_DIR" )"
 PYTHON_DIR="$RESEARCH_DIR/python"
 
 # 설정 파일 경로
-CONFIG_FILE="settings/full_settings.json"
-FULL_CONFIG_PATH="$PYTHON_DIR/$CONFIG_FILE"
+CONFIG_FILE="settings/full_exp.json" 
+FULL_CONFIG_PATH="$RESEARCH_DIR/$CONFIG_FILE"
 
 # 최종 테스트를 위한 안내 메시지
 echo "=================================================="

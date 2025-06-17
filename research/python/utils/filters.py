@@ -15,6 +15,8 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import Descriptors, AllChem, rdmolops, rdMolDescriptors
 from rdkit.Chem import rdFingerprintGenerator
 
+from .logging_utils import get_logger
+
 # --- Configuration for SA_Score ---
 try:
     from rdkit.Contrib.SA_Score import sascorer
@@ -25,7 +27,7 @@ except ImportError:
         import sascorer
     except ImportError:
         sascorer = None
-        print("Warning: SA_Score (sascorer) could not be imported. SA_Score based rewards will be disabled.")
+        get_logger().warning("SA_Score (sascorer) could not be imported. SA_Score based rewards will be disabled.")
 
 # --- File-level Filter Initialization ---
 _filters_initialized = False
@@ -34,6 +36,7 @@ _mcf_wehi_filters = []
 
 def _initialize_filters():
     """Initializes PAINS and MCF/WEHI filters from files."""
+    logger = get_logger()
     global _filters_initialized, _pains_filters, _mcf_wehi_filters
     if _filters_initialized:
         return
@@ -55,9 +58,9 @@ def _initialize_filters():
         _mcf_wehi_filters = [Chem.MolFromSmarts(smarts) for smarts in mcf_wehi_smarts if smarts]
         
         _filters_initialized = True
-        print("✅ PAINS and MCF/WEHI filters initialized successfully.")
+        logger.info("✅ PAINS and MCF/WEHI filters initialized successfully.")
     except Exception as e:
-        print(f"⚠️ Filter initialization failed: {e}. Some functionalities may be disabled.")
+        logger.warning(f"⚠️ Filter initialization failed: {e}. Some functionalities may be disabled.")
 
 # --- Public Functions ---
 
@@ -93,6 +96,7 @@ def calculate_rewards(smiles_ls,
     """
     Calculates reward scores for a list of SMILES strings in parallel.
     """
+    logger = get_logger()
     _initialize_filters()
     
     total_molecules = len(smiles_ls)
@@ -121,9 +125,6 @@ def calculate_rewards(smiles_ls,
     
     if effective_chunk_size == 0: effective_chunk_size = 1
 
-    print(f"🚀 Calculating rewards for {total_molecules:,} molecules...")
-    print(f"   Strategy: {reward_strategy}, Cores: {n_cores}, Chunk Size: {effective_chunk_size:,}")
-
     start_time = time.time()
     
     if n_cores > 0 and total_molecules > 1:
@@ -134,8 +135,6 @@ def calculate_rewards(smiles_ls,
     
     elapsed_time = time.time() - start_time
     molecules_per_sec = total_molecules / elapsed_time if elapsed_time > 0 else 0
-    
-    print(f"✅ Reward calculation complete in {elapsed_time:.2f}s ({molecules_per_sec:,.0f} molecules/sec)")
     
     return torch.Tensor(rewards)
 
@@ -183,6 +182,7 @@ def _check_atom_count(mol, min_atoms=5, max_atoms=50):
 # --- Internal Reward Calculation Strategies ---
 
 def _calculate_reward_original(smiles, max_mol_weight=800):
+    logger = get_logger()
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None: return 0
@@ -194,10 +194,11 @@ def _calculate_reward_original(smiles, max_mol_weight=800):
         reward += _check_sa_score(mol)
         return reward
     except ZeroDivisionError:
-        print(f"Warning: Reward calculation (original) failed for SMILES: {smiles}. Assigning 0.", file=sys.stderr)
+        logger.error(f"Reward calculation (original) failed for SMILES: {smiles}. Assigning 0.")
         return 0
 
 def _calculate_reward_fast(smiles, max_mol_weight=800):
+    logger = get_logger()
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None: return 0
@@ -209,10 +210,11 @@ def _calculate_reward_fast(smiles, max_mol_weight=800):
         reward += _check_h_bonds(mol)
         return reward
     except (ZeroDivisionError, Exception) as e:
-        print(f"Warning: Reward calculation (fast) failed for SMILES: {smiles} with error {e}. Assigning 0.", file=sys.stderr)
+        logger.error(f"Reward calculation (fast) failed for SMILES: {smiles} with error {e}. Assigning 0.")
         return 0
 
 def _calculate_reward_minimal(smiles, max_mol_weight=800):
+    logger = get_logger()
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None: return 0
@@ -222,5 +224,5 @@ def _calculate_reward_minimal(smiles, max_mol_weight=800):
         reward += _check_atom_count(mol)
         return reward
     except (ZeroDivisionError, Exception) as e:
-        print(f"Warning: Reward calculation (minimal) failed for SMILES: {smiles} with error {e}. Assigning 0.", file=sys.stderr)
+        logger.error(f"Reward calculation (minimal) failed for SMILES: {smiles} with error {e}. Assigning 0.")
         return 0

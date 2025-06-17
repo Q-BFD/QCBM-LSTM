@@ -19,8 +19,8 @@ MAIN_SCRIPT="main.py"
 declare -A EXPERIMENTS
 EXPERIMENTS[default]=""                                               # Use all default values from TrainingArgs
 EXPERIMENTS[qcbm]=""                                                  # Use all default values from TrainingArgs  
-EXPERIMENTS[temp_test]="./python/settings/temp_experiment.json"      # Temperature override example
-EXPERIMENTS[fast_test]="./python/settings/fast_test.json"            # Quick test example
+EXPERIMENTS[temp_test]="./settings/temp_experiment.json"      # Temperature override example
+EXPERIMENTS[fast_test]="./settings/fast_test.json"            # Quick test example
 
 # =============================================================================
 # Helper Functions
@@ -43,10 +43,11 @@ show_usage() {
     echo "  bash sh/run.sh default          # Run with all default values"
     echo "  bash sh/run.sh --help           # Show this help"
     echo ""
-    echo "To add custom experiments, edit the EXPERIMENTS array in this script:"
-    echo "  EXPERIMENTS[my_exp]=\"./python/settings/my_config.json\""
-    echo ""
-    echo "Additional arguments will be passed directly to main.py"
+    echo -e "${YELLOW}새로운 실험 추가하기:${NC}"
+    echo "  1. 이 스크립트 상단의 'EXPERIMENTS' 배열에 새 항목 추가:"
+    echo "     예: EXPERIMENTS[my_exp]=\"./settings/my_config.json\""
+    echo "  2. 해당 경로에 JSON 설정 파일 생성"
+    echo "  3. 다음 명령어로 실험 실행: $0 my_exp"
 }
 
 check_environment() {

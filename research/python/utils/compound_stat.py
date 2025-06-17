@@ -6,7 +6,9 @@ from torch import Tensor
 
 # Import filters directly to be used in stats calculation
 from .filters import _check_legacy_filters, _check_pains, _check_mcf_wehi, _check_sa_score, sascorer
+from .logging_utils import get_logger
 
+logger = get_logger()
 
 def is_valid_compound(smi: str, max_mol_weight: float = 800) -> bool:
     """
@@ -85,33 +87,33 @@ def compute_compound_stats(
     The validity is now checked using a consolidated `is_valid_compound` function
     that mirrors the 'original' reward strategy.
     """
-    print("\n--- Computing Compound Stats ---")
+    logger.info("\n--- Computing Compound Stats ---")
     
     generated_compounds = decoder_fn(compounds)
-    print(f"  - Decoded {len(generated_compounds)} compounds from tensor.")
+    logger.info(f"  - Decoded {len(generated_compounds)} compounds from tensor.")
 
     diversity_fraction = diversity_fn(generated_compounds)
-    print(f"  - Calculated diversity: {diversity_fraction:.4f}")
+    logger.info(f"  - Calculated diversity: {diversity_fraction:.4f}")
 
     unqiue_generated_compounds = set(generated_compounds)
-    print(f"  - Found {len(unqiue_generated_compounds)} unique compounds.")
+    logger.info(f"  - Found {len(unqiue_generated_compounds)} unique compounds.")
 
     # Use the new, consistent validation function
     unique_valid_compounds = {
         s for s in unqiue_generated_compounds if is_valid_compound(s)
     }
-    print(f"  - Found {len(unique_valid_compounds)} valid compounds after filtering.")
+    logger.info(f"  - Found {len(unique_valid_compounds)} valid compounds after filtering.")
 
     unique_unseen_valid_compounds = unique_valid_compounds - set(train_compounds)
-    print(f"  - Found {len(unique_unseen_valid_compounds)} unseen compounds (not in training set).")
+    logger.info(f"  - Found {len(unique_unseen_valid_compounds)} unseen compounds (not in training set).")
     
     total_compounds = len(generated_compounds)
     unique_fraction = len(unqiue_generated_compounds) / total_compounds if total_compounds > 0 else 0
     filter_fraction = len(unique_valid_compounds) / len(unqiue_generated_compounds) if len(unqiue_generated_compounds) > 0 else 0
 
-    print(f"  - Unique fraction: {unique_fraction:.2%}")
-    print(f"  - Valid fraction (of unique): {filter_fraction:.2%}")
-    print("---------------------------------")
+    logger.info(f"  - Unique fraction: {unique_fraction:.2%}")
+    logger.info(f"  - Valid fraction (of unique): {filter_fraction:.2%}")
+    logger.info("---------------------------------")
 
     stats = CompoundsStatistics(
         unqiue_generated_compounds,

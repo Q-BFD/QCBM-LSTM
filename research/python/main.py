@@ -30,6 +30,7 @@ from utils.wandb_utils import (
     init_wandb, log_epoch_metrics, log_molecules_to_wandb, log_qcbm_distribution, finish_wandb
 )
 from utils.experiment_manager import ExperimentManager
+from utils.logging_utils import setup_logger, get_logger
 
 # Import custom modules
 from utils.filters import get_diversity
@@ -49,7 +50,11 @@ def main():
     manager = ExperimentManager(args)
     dirs = manager.get_directories()
     
-    print(f"[Info] 모든 결과는 다음 디렉토리에 저장됩니다: {dirs['base']}")
+    # Setup logger
+    setup_logger(dirs['logs'])
+    logger = get_logger()
+    
+    logger.info(f"All results will be saved to: {dirs['base']}")
     
     # Initialize WandB monitoring
     wandb_run = init_wandb(args)
@@ -58,28 +63,28 @@ def main():
     data, selfies, train_compounds = load_or_create_dataset(args)
     
     # Create train/test split
-    print(f"\n========== Data Split Configuration ==========")
+    logger.info("========== Data Split Configuration ==========")
     train_dataloader, test_dataloader = create_train_test_dataloaders(data, args, test_fraction=args.test_fraction)
-    print(f"Train batches: {len(train_dataloader)}")
-    print(f"Test batches: {len(test_dataloader)}")
-    print(f"Test fraction: {args.test_fraction*100:.1f}%")
+    logger.info(f"Train batches: {len(train_dataloader)}")
+    logger.info(f"Test batches: {len(test_dataloader)}")
+    logger.info(f"Test fraction: {args.test_fraction*100:.1f}%")
     
     # Setup functions and models
     validity_fn, rew_fc = setup_filter_functions(args)
     diversity_fn = get_diversity
     decoder_fn = selfies.decode
     
-    print(f"\n========== Models Configuration ==========")
+    logger.info("========== Models Configuration ==========")
     
     # Create models
     prior = create_prior_model(args)
     model = create_lstm_model(args, selfies)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
-    print(f"Prior model: {args.prior_model}")
-    print(f"LSTM layers: {args.n_lstm_layers}")
-    print(f"Training epochs: {args.lstm_n_epochs}")
-    print(f"Batch size: {args.batch_size}")
+    logger.info(f"Prior model: {args.prior_model}")
+    logger.info(f"LSTM layers: {args.n_lstm_layers}")
+    logger.info(f"Training epochs: {args.lstm_n_epochs}")
+    logger.info(f"Batch size: {args.batch_size}")
     
     # =============================================================================
     # Training Loop
@@ -87,19 +92,19 @@ def main():
     all_compound_stats = []
     
     for epoch in range(1, args.lstm_n_epochs + 1):
-        print(f"\n{'='*80}")
-        print(f"EPOCH {epoch}/{args.lstm_n_epochs}")
-        print(f"{'='*80}")
+        logger.info(f"\n{'='*80}")
+        logger.info(f"EPOCH {epoch}/{args.lstm_n_epochs}")
+        logger.info(f"{'='*80}")
         epoch_start_time = time.perf_counter()
         
         # -------------------------------------------------------------------------
         # LSTM Training Phase
         # -------------------------------------------------------------------------
-        print("[Step 1/6] Training LSTM model...")
+        logger.info("[Step 1/6] Training LSTM model...")
         model.train()
         
         epoch_losses = []
-        print(f"Training on {len(train_dataloader)} batches...")
+        logger.info(f"Training on {len(train_dataloader)} batches...")
         
         # Use tqdm with better settings for remote/SSH environments
         with tqdm(
@@ -127,15 +132,15 @@ def main():
                 
                 # Print progress every 10 batches as backup
                 if (batch_idx + 1) % 10 == 0:
-                    print(f"  Batch {batch_idx + 1}/{len(train_dataloader)}, Loss: {batch_result['loss']:.4f}")
+                    logger.debug(f"  Batch {batch_idx + 1}/{len(train_dataloader)}, Loss: {batch_result['loss']:.4f}")
         
         train_loss = sum(epoch_losses) / len(epoch_losses)
-        print(f"✅ LSTM training completed. Average train loss: {train_loss:.4f}")
+        logger.info(f"✅ LSTM training completed. Average train loss: {train_loss:.4f}")
         
         # -------------------------------------------------------------------------
         # Test Loss Evaluation
         # -------------------------------------------------------------------------
-        print("[Step 1.5/6] Evaluating on test set...")
+        logger.info("[Step 1.5/6] Evaluating on test set...")
         model.eval()
         
         test_losses = []
@@ -152,18 +157,18 @@ def main():
                 test_losses.append(test_result['test_loss'])
         
         test_loss = sum(test_losses) / len(test_losses)
-        print(f"✅ Test evaluation completed. Average test loss: {test_loss:.4f}")
+        logger.info(f"✅ Test evaluation completed. Average test loss: {test_loss:.4f}")
         
         # -------------------------------------------------------------------------
         # Generation and Evaluation Phase
         # -------------------------------------------------------------------------
         model.eval()
         
-        print("[Step 2/6] Generating compounds with LSTM...")
+        logger.info("[Step 2/6] Generating compounds with LSTM...")
         prior_samples_current, _, _ = prior.generate(args.n_test_samples, sampler=None, backend=None)
         encoded_compounds = model.generate(prior_samples_current)
         
-        print("[Step 3/6] Calculating compound statistics...")
+        logger.info("[Step 3/6] Calculating compound statistics...")
         compound_stats = compute_compound_stats(
             encoded_compounds,
             decoder_fn,
@@ -174,7 +179,7 @@ def main():
         # -------------------------------------------------------------------------
         # Prior Training Phase
         # -------------------------------------------------------------------------
-        print("[Step 4/6] Training prior model...")
+        logger.info("[Step 4/6] Training prior model...")
         
         # Calculate rewards for prior training
         datanew = rew_fc(list(compound_stats.all_compounds)).cpu()
@@ -196,7 +201,7 @@ def main():
         # -------------------------------------------------------------------------
         # Final Generation and Evaluation
         # -------------------------------------------------------------------------
-        print("[Step 5/6] Generating compounds after prior training...")
+        logger.info("[Step 5/6] Generating compounds after prior training...")
         prior_samples_current, _, _ = prior.generate(args.n_test_samples, sampler=None, backend=None)
         encoded_compounds = model.generate(prior_samples_current)
         
@@ -216,7 +221,7 @@ def main():
         # -------------------------------------------------------------------------
         # Save Results
         # -------------------------------------------------------------------------
-        print("[Step 6/6] Saving epoch results...")
+        logger.info("[Step 6/6] Saving epoch results...")
         
         # Save epoch results with improved organization
         save_epoch_results(
@@ -250,9 +255,9 @@ def main():
     # =============================================================================
     # Final Summary
     # =============================================================================
-    print(f"\n{'='*80}")
-    print("TRAINING COMPLETED")
-    print(f"{'='*80}")
+    logger.info(f"\n{'='*80}")
+    logger.info("TRAINING COMPLETED")
+    logger.info(f"{'='*80}")
     
     # Save comprehensive training summary
     save_training_summary(all_compound_stats, args, dirs)
@@ -261,13 +266,13 @@ def main():
     best_stats = max(all_compound_stats, key=lambda x: x.valid_fraction)
     best_epoch = all_compound_stats.index(best_stats) + 1
     
-    print(f"\nBest Performance (Epoch {best_epoch}):")
-    print(f"  Valid fraction: {best_stats.valid_fraction:.4f}")
-    print(f"  Diversity: {best_stats.diversity_fraction:.4f}")
-    print(f"  Unique fraction: {best_stats.unique_fraction:.4f}")
-    print(f"  Total valid compounds: {best_stats.n_valid:,}")
-    print(f"\nAll results saved to: {dirs['base']}")
-    print("Training completed successfully! 🎉")
+    logger.info(f"Best Performance (Epoch {best_epoch}):")
+    logger.info(f"  Valid fraction: {best_stats.valid_fraction:.4f}")
+    logger.info(f"  Diversity: {best_stats.diversity_fraction:.4f}")
+    logger.info(f"  Unique fraction: {best_stats.unique_fraction:.4f}")
+    logger.info(f"  Total valid compounds: {best_stats.n_valid:,}")
+    logger.info(f"All results saved to: {dirs['base']}")
+    logger.info("Training completed successfully! 🎉")
     
     # Finish WandB logging
     finish_wandb()
@@ -285,10 +290,10 @@ if __name__ == "__main__":
     sortby = pstats.SortKey.CUMULATIVE
     ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
     
-    print("\n" + "="*80)
-    print("PERFORMANCE PROFILE (TOP 20 CUMULATIVE TIME)")
-    print("="*80)
+    logger.debug("\n" + "="*80)
+    logger.debug("PERFORMANCE PROFILE (TOP 20 CUMULATIVE TIME)")
+    logger.debug("="*80)
     ps.print_stats(20)
-    print(s.getvalue())
-    print("="*80)
+    logger.debug(s.getvalue())
+    logger.debug("="*80)
     

@@ -5,6 +5,8 @@ import getpass
 import socket
 from pathlib import Path
 
+from .logging_utils import get_logger
+
 class ExperimentManager:
     """
     실험 환경(디렉토리, 이름, 정보 파일)을 관리하는 클래스.
@@ -14,6 +16,7 @@ class ExperimentManager:
         self.args = args
         self.experiment_dir = None
         self.dirs = {}
+        self.logger = get_logger()
 
         self._generate_experiment_name_if_needed()
         self._setup_directories()
@@ -22,7 +25,7 @@ class ExperimentManager:
     def _generate_experiment_name_if_needed(self):
         """실험 이름이 제공되지 않은 경우, 주요 파라미터를 기반으로 자동 생성합니다."""
         if self.args.experiment_name and self.args.experiment_name.strip() != "":
-            print(f"✅ 제공된 실험 이름 사용: {self.args.experiment_name}")
+            self.logger.info(f"✅ 제공된 실험 이름 사용: {self.args.experiment_name}")
             return
 
         try:
@@ -51,7 +54,7 @@ class ExperimentManager:
             hash_6digit
         ]
         self.args.experiment_name = "_".join(map(str, name_parts))
-        print(f"🔧 실험 이름이 제공되지 않아 자동으로 생성합니다: {self.args.experiment_name}")
+        self.logger.info(f"🔧 실험 이름이 제공되지 않아 자동으로 생성합니다: {self.args.experiment_name}")
 
     def _setup_directories(self):
         """실험 결과 저장을 위한 디렉토리 구조를 생성합니다."""
@@ -66,7 +69,7 @@ class ExperimentManager:
             'base': self.experiment_dir,
             **{subdir: self.experiment_dir / subdir for subdir in subdirectories}
         }
-        print(f"✅ 실험 디렉토리 구조 생성 완료: {self.experiment_dir}")
+        self.logger.info(f"✅ 실험 디렉토리 구조 생성 완료: {self.experiment_dir}")
 
     def _save_config_info(self):
         """`experiment_info.txt` 파일에 모든 설정 정보를 상세히 기록합니다."""
@@ -77,12 +80,17 @@ class ExperimentManager:
             f.write(f"# Timestamp: {datetime.datetime.now().isoformat()}\n")
             f.write("-" * 50 + "\n\n")
             
-            for field_name, field in self.args.model_fields.items():
-                value = getattr(self.args, field_name)
-                description = field.description or "No description"
-                f.write(f"{field_name}: {value}  # {description}\n")
+            # Use model_fields to get descriptions
+            if hasattr(self.args, 'model_fields'):
+                for field_name, field in self.args.model_fields.items():
+                    value = getattr(self.args, field_name)
+                    description = field.description or "No description"
+                    f.write(f"{field_name}: {value}  # {description}\n")
+            else: # Fallback for other argument sources
+                for key, value in vars(self.args).items():
+                    f.write(f"{key}: {value}\n")
         
-        print(f"📝 모든 실험 설정을 {info_file}에 저장했습니다.")
+        self.logger.info(f"📝 모든 실험 설정을 {info_file}에 저장했습니다.")
 
     def get_directories(self):
         """생성된 디렉토리 경로 딕셔너리를 반환합니다."""

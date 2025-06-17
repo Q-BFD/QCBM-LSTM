@@ -21,6 +21,7 @@ sys.path.append(research_root)
 from .selfies_encoding import SelfiesEncoder
 from .filters import calculate_rewards
 from .dataloader import new_data_loader, save_obj, load_obj
+from .logging_utils import get_logger
 
 # Import from other modules
 from settings.training_para import TrainingArgs
@@ -35,16 +36,18 @@ from model.prior.prior_qcbm import SingleBasisQCBM, QCBMAnsatz, ScipyOptimizer
 
 def setup_environment():
     """Set up the working directory and disable RDKit logging."""
+    logger = get_logger()
     # Navigate to research root directory (parent of python folder)
     current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     os.chdir(current_dir)
     RDLogger.DisableLog("rdApp.*")
-    print(f"\n========== Start script ==========")
-    print(f"Working directory: {os.getcwd()}")
+    logger.info(f"\n========== Start script ==========")
+    logger.info(f"Working directory: {os.getcwd()}")
 
 
 def parse_arguments():
     """Parse command line arguments and return training configuration."""
+    logger = get_logger()
     argparser = ArgumentParser()
     argparser.add_argument(
         "--config_file",
@@ -56,12 +59,12 @@ def parse_arguments():
     
     # Use config file if provided, otherwise use defaults from TrainingArgs
     if namespace.config_file and os.path.exists(namespace.config_file):
-        print(f"📄 Using config file: {namespace.config_file}")
+        logger.info(f"📄 Using config file: {namespace.config_file}")
         args = TrainingArgs.from_file(namespace.config_file)
     else:
         if namespace.config_file:
-            print(f"⚠️  Config file not found: {namespace.config_file}")
-        print("🎯 Using default configuration from TrainingArgs")
+            logger.warning(f"⚠️  Config file not found: {namespace.config_file}")
+        logger.info("🎯 Using default configuration from TrainingArgs")
         # Create with all defaults - only need to specify required fields
         args = TrainingArgs(prior_model="QCBM")  # prior_model is the only required field
     
@@ -91,13 +94,14 @@ def get_dataset_path(data_id):
 
 def load_or_create_dataset(args):
     """Load dataset or create it if it doesn't exist."""
+    logger = get_logger()
     data_id = int(args.data_set_id)
     path_to_dataset = get_dataset_path(data_id)
     path_to_pickle_data = path_to_dataset.split(".")[0]
     
     # If pickle file does not exist, create it
     if not os.path.isfile(f"{path_to_pickle_data}.pkl"):
-        print(f"🗄️ Pickle file not found. Creating dataset from {path_to_dataset}...")
+        logger.info(f"🗄️ Pickle file not found. Creating dataset from {path_to_dataset}...")
         
         # 새로운 통합 SelfiesEncoder 사용
         selfies_encoder = SelfiesEncoder(
@@ -109,16 +113,16 @@ def load_or_create_dataset(args):
         data_tensor = selfies_encoder.encoded_samples.float()
         
         save_obj([data_tensor, selfies_encoder], f"{path_to_pickle_data}.pkl")
-        print(f"💾 Dataset saved to {path_to_pickle_data}.pkl")
+        logger.info(f"💾 Dataset saved to {path_to_pickle_data}.pkl")
     
     # Load pickle file
-    print(f"🔄 Loading dataset from {path_to_pickle_data}.pkl...")
+    logger.info(f"🔄 Loading dataset from {path_to_pickle_data}.pkl...")
     object_loaded = load_obj(f"{path_to_pickle_data}.pkl")
     data, selfies = object_loaded[0], object_loaded[1]
     train_compounds = selfies.valid_smiles # Assuming valid_smiles is populated
     
-    print(f"✅ Dataset loaded successfully. Shape: {data.shape}")
-    print(f"   Number of valid SMILES: {len(train_compounds):,}")
+    logger.info(f"✅ Dataset loaded successfully. Shape: {data.shape}")
+    logger.info(f"   Number of valid SMILES: {len(train_compounds):,}")
     
     return data, selfies, train_compounds
 
@@ -147,6 +151,7 @@ def split_train_test_data(data, test_fraction=0.1, seed=42):
     Returns:
         tuple: (train_data, test_data)
     """
+    logger = get_logger()
     import torch
     import numpy as np
     
@@ -169,10 +174,10 @@ def split_train_test_data(data, test_fraction=0.1, seed=42):
     train_data = data[train_indices]
     test_data = data[test_indices]
     
-    print(f"📊 데이터 분할 완료:")
-    print(f"   - 전체 데이터: {total_size:,}개")
-    print(f"   - 훈련 데이터: {train_size:,}개 ({(1-test_fraction)*100:.1f}%)")
-    print(f"   - 테스트 데이터: {test_size:,}개 ({test_fraction*100:.1f}%)")
+    logger.info(f"📊 데이터 분할 완료:")
+    logger.info(f"   - 전체 데이터: {total_size:,}개")
+    logger.info(f"   - 훈련 데이터: {train_size:,}개 ({(1-test_fraction)*100:.1f}%)")
+    logger.info(f"   - 테스트 데이터: {test_size:,}개 ({test_fraction*100:.1f}%)")
     
     return train_data, test_data
 
@@ -189,6 +194,7 @@ def create_train_test_dataloaders(data, args, test_fraction=0.1):
     Returns:
         tuple: (train_dataloader, test_dataloader)
     """
+    logger = get_logger()
     # 데이터 분할
     train_data, test_data = split_train_test_data(data, test_fraction=test_fraction)
     
@@ -239,7 +245,8 @@ def setup_filter_functions(args):
 
 def create_prior_model(args):
     """Create and return the prior model based on configuration."""
-    print(f"Creating {args.prior_model} prior model...")
+    logger = get_logger()
+    logger.info(f"Creating {args.prior_model} prior model...")
     
     if args.prior_model == "classical":
         return RandomChoiceSampler(args.prior_size, choices=[0.0, 1.0])
@@ -260,7 +267,8 @@ def create_prior_model(args):
 
 def create_lstm_model(args, selfies):
     """Create and return the LSTM model."""
-    print(f"Creating LSTM model with {args.n_lstm_layers} layers...")
+    logger = get_logger()
+    logger.info(f"Creating LSTM model with {args.n_lstm_layers} layers...")
     
     return NoisyLSTMv3(
         vocab_size=selfies.vocab_size,
@@ -282,22 +290,23 @@ def create_lstm_model(args, selfies):
 
 def print_epoch_summary(epoch, compound_stats, epoch_time, train_loss=None, test_loss=None):
     """Print formatted epoch summary."""
-    print(f"\n{'='*60}")
-    print(f"EPOCH {epoch} SUMMARY")
-    print(f"{'='*60}")
-    print(f"Execution time: {epoch_time:.2f} seconds")
+    logger = get_logger()
+    logger.info(f"\n{'='*60}")
+    logger.info(f"EPOCH {epoch} SUMMARY")
+    logger.info(f"{'='*60}")
+    logger.info(f"Execution time: {epoch_time:.2f} seconds")
     
     # Loss 정보 출력
     if train_loss is not None:
-        print(f"Train loss: {train_loss:.4f}")
+        logger.info(f"Train loss: {train_loss:.4f}")
     if test_loss is not None:
-        print(f"Test loss: {test_loss:.4f}")
+        logger.info(f"Test loss: {test_loss:.4f}")
     
     # 기존 compound 통계
-    print(f"Unique compounds: {compound_stats.n_unique:,}")
-    print(f"Valid compounds: {compound_stats.n_valid:,}")
-    print(f"Unseen compounds: {compound_stats.n_unseen:,}")
-    print(f"Unique fraction: {compound_stats.unique_fraction:.4f}")
-    print(f"Valid fraction: {compound_stats.valid_fraction:.4f}")
-    print(f"Diversity fraction: {compound_stats.diversity_fraction:.4f}")
-    print(f"{'='*60}") 
+    logger.info(f"Unique compounds: {compound_stats.n_unique:,}")
+    logger.info(f"Valid compounds: {compound_stats.n_valid:,}")
+    logger.info(f"Unseen compounds: {compound_stats.n_unseen:,}")
+    logger.info(f"Unique fraction: {compound_stats.unique_fraction:.4f}")
+    logger.info(f"Valid fraction: {compound_stats.valid_fraction:.4f}")
+    logger.info(f"Diversity fraction: {compound_stats.diversity_fraction:.4f}")
+    logger.info(f"{'='*60}") 
